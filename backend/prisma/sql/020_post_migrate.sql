@@ -166,12 +166,29 @@ BEGIN
   ELSIF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'audit_logs') THEN
     ALTER TABLE audit_logs RENAME TO audit_logs_unpartitioned;
 
-    CREATE TABLE audit_logs (LIKE audit_logs_unpartitioned INCLUDING ALL)
-      PARTITION BY RANGE (created_at);
+    -- INCLUDING ALL would copy the primary key on (id) alone, and PostgreSQL
+    -- rejects that: a unique constraint on a partitioned table must contain
+    -- every partitioning column, because uniqueness cannot be enforced across
+    -- partitions otherwise. So the key becomes (id, created_at).
+    --
+    -- id stays globally unique in practice — it is a UUIDv7, whose first 48
+    -- bits are the millisecond timestamp that decides the partition, so the
+    -- two columns are not independent.
+    CREATE TABLE audit_logs (
+      LIKE audit_logs_unpartitioned INCLUDING DEFAULTS INCLUDING COMMENTS
+    ) PARTITION BY RANGE (created_at);
+
+    ALTER TABLE audit_logs ADD PRIMARY KEY (id, created_at);
 
     INSERT INTO audit_logs SELECT * FROM audit_logs_unpartitioned;
     DROP TABLE audit_logs_unpartitioned;
   END IF;
+
+  -- Recreated here because INCLUDING INDEXES was deliberately omitted above.
+  CREATE INDEX IF NOT EXISTS audit_logs_tenant_entity_idx
+    ON audit_logs (tenant_id, entity_type, entity_id);
+  CREATE INDEX IF NOT EXISTS audit_logs_actor_time_idx
+    ON audit_logs (actor_id, created_at);
 
   -- Rolling window: current month plus twelve ahead. A scheduled job extends
   -- this; creating them eagerly means a write never fails for a missing
