@@ -1,0 +1,151 @@
+{
+  "common": {
+    "appName": "Lawyers Insurance Hub",
+    "signIn": "Se connecter",
+    "signOut": "Se déconnecter",
+    "email": "Adresse e-mail",
+    "password": "Mot de passe",
+    "continue": "Continuer",
+    "cancel": "Annuler",
+    "save": "Enregistrer",
+    "loading": "Chargement…",
+    "language": "Langue",
+    "currency": "XAF"
+  },
+  "nav": {
+    "dashboard": "Tableau de bord",
+    "products": "Produits",
+    "policies": "Mes polices",
+    "claims": "Sinistres",
+    "payments": "Paiements",
+    "family": "Famille",
+    "vehicles": "Véhicules",
+    "barPortal": "Portail Barreau",
+    "claimsQueue": "File des sinistres"
+  },
+  "auth": {
+    "title": "Connexion à votre espace",
+    "subtitle": "Réservé aux avocats inscrits au Barreau du Cameroun",
+    "mfaTitle": "Authentification à deux facteurs",
+    "mfaPrompt": "Saisissez le code à six chiffres de votre application d'authentification",
+    "forgotPassword": "Mot de passe oublié ?",
+    "noAccount": "Pas encore de compte ?",
+    "register": "S'inscrire"
+  },
+  "dashboard": {
+    "title": "Tableau de bord",
+    "coverSummary": "Synthèse de couverture",
+    "activePolicies": "{count, plural, =0 {Aucune police active} one {# police active} other {# polices actives}}",
+    "nextPayment": "Prochain paiement",
+    "dueOn": "Échéance le {date}",
+    "payNow": "Payer maintenant",
+    "attention": "À traiter",
+    "expiringSoon": "{policy} expire dans {days, plural, one {# jour} other {# jours}}",
+    "renew": "Renouveler",
+    "claimsInFlight": "Sinistres en cours",
+    "quickActions": "Actions rapides",
+    "fileClaim": "Déclarer un sinistre",
+    "getQuote": "Obtenir un devis",
+    "certificates": "Attestations",
+    "emptyPolicies": "Vous n'avez pas encore de police. Découvrez les produits les plus souscrits dans votre domaine de pratique."
+  },
+  "verification": {
+    "pending": "Vérification en cours auprès du Barreau",
+    "pendingDetail": "Vous pouvez consulter les produits et demander des devis. La souscription sera possible dès validation.",
+    "rejected": "Inscription rejetée par le Barreau",
+    "verified": "Compte vérifié"
+  },
+  "products": {
+    "title": "Nos produits",
+    "compare": "Comparer les formules",
+    "from": "À partir de",
+    "perYear": "par an",
+    "subscribe": "Souscrire",
+    "coverage": "Garanties",
+    "limit": "Plafond",
+    "deductible": "Franchise",
+    "exclusions": "Exclusions"
+  },
+  "quote": {
+    "title": "Votre devis",
+    "premium": "Prime annuelle",
+    "installments": "Échéances",
+    "installmentPlan": "{count, plural, one {Paiement unique} other {# échéances}}",
+    "breakdown": "Détail du calcul",
+    "basePremium": "Prime de base",
+    "validUntil": "Valable jusqu'au {date}",
+    "accept": "Souscrire ce devis"
+  },
+  "payment": {
+    "title": "Paiement",
+    "chooseMethod": "Choisissez un moyen de paiement",
+    "orangeMoney": "Orange Money",
+    "mtnMomo": "MTN Mobile Money",
+    "card": "Carte bancaire",
+    "bankTransfer": "Virement bancaire",
+    "walletNumber": "Numéro du portefeuille",
+    "pending": "Paiement en attente",
+    "ussdPrompt": "Confirmez le paiement sur votre téléphone. Cette page se met à jour automatiquement.",
+    "retry": "Réessayer",
+    "changeMethod": "Changer de moyen de paiement",
+    "succeeded": "Paiement confirmé",
+    "receipt": "Télécharger le reçu"
+  },
+  "claims": {
+    "title": "Sinistres",
+    "file": "Déclarer un sinistre",
+    "step": "Étape {current} sur {total}",
+    "selectPolicy": "Police concernée",
+    "incidentDate": "Date du sinistre",
+    "incidentPlace": "Lieu",
+    "description": "Description",
+    "evidence": "Pièces justificatives",
+    "addPhoto": "Ajouter une photo",
+    "addVideo": "Ajouter une vidéo",
+    "addDocument": "Ajouter un document",
+    "amountClaimed": "Montant réclamé",
+    "submit": "Soumettre la déclaration",
+    "status": {
+      "submitted": "Déclaré",
+      "investigation": "Enquête",
+      "assessment": "Évaluation",
+      "approved": "Approuvé",
+      "rejected": "Rejeté",
+      "payment": "Paiement",
+      "closed": "Clôturé"
+    },
+    "sla": {
+      "on_track": "Dans les délais",
+      "due_soon": "Échéance proche",
+      "breached": "Délai dépassé",
+      "none": "—"
+    }
+  },
+  "policy": {
+    "status": {
+      "draft": "Brouillon",
+      "submitted": "Soumis",
+      "under_review": "En examen",
+      "approved": "Approuvé",
+      "active": "Actif",
+      "suspended": "Suspendu",
+      "expired": "Expiré",
+      "cancelled": "Résilié",
+      "renewed": "Renouvelé"
+    },
+    "number": "N° de police",
+    "period": "Période de couverture",
+    "downloadCertificate": "Télécharger l'attestation"
+  },
+  "bar": {
+    "title": "Portail du Barreau",
+    "queue": "Vérifications en attente",
+    "barNumber": "N° du Barreau",
+    "admittedOn": "Prestation de serment",
+    "approve": "Approuver",
+    "reject": "Rejeter",
+    "rejectReason": "Motif du rejet",
+    "rejectReasonRequired": "Un motif est obligatoire en cas de rejet",
+    "slaWarning": "En attente depuis plus de 24 heures"
+  }
+}

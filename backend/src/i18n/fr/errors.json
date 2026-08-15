@@ -1,0 +1,74 @@
+{
+  "validation_failed": "Un ou plusieurs champs sont invalides",
+  "http": {
+    "400": "Requête invalide",
+    "401": "Authentification requise",
+    "403": "Accès refusé",
+    "404": "Introuvable",
+    "409": "Conflit",
+    "422": "Données non traitables",
+    "429": "Trop de requêtes",
+    "500": "Erreur interne du serveur"
+  },
+  "internal": {
+    "title": "Erreur interne du serveur",
+    "detail": "Une erreur est survenue de notre côté. Communiquez la référence ci-dessous au support."
+  },
+  "not_found": {
+    "title": "Introuvable",
+    "detail": "L'enregistrement demandé n'existe pas"
+  },
+  "conflict": {
+    "title": "Existe déjà",
+    "duplicate": "Un enregistrement avec ce {field} existe déjà"
+  },
+  "invalid_reference": {
+    "title": "Référence invalide",
+    "detail": "Un enregistrement référencé n'existe pas"
+  },
+  "illegal_transition": {
+    "title": "Action impossible dans cet état",
+    "detail": "Impossible d'effectuer « {transition} » sur un(e) {entity} au statut « {from} »"
+  },
+  "auth": {
+    "invalid_credentials": "Adresse e-mail ou mot de passe incorrect",
+    "account_locked": "Compte temporairement verrouillé après plusieurs tentatives échouées. Réessayez dans {minutes} minutes.",
+    "account_suspended": "Ce compte est suspendu. Contactez le support.",
+    "email_not_verified": "Veuillez vérifier votre adresse e-mail avant de continuer",
+    "phone_not_verified": "Veuillez vérifier votre numéro de téléphone avant de continuer",
+    "otp_invalid": "Code de vérification incorrect",
+    "otp_expired": "Ce code de vérification a expiré. Demandez-en un nouveau.",
+    "otp_too_many_attempts": "Trop de tentatives. Demandez un nouveau code.",
+    "refresh_token_invalid": "Session expirée. Veuillez vous reconnecter.",
+    "refresh_token_reused": "Session révoquée pour raison de sécurité. Veuillez vous reconnecter.",
+    "mfa_required": "Authentification à deux facteurs requise",
+    "mfa_invalid": "Code d'authentification incorrect"
+  },
+  "onboarding": {
+    "bar_number_taken": "Ce numéro du Barreau est déjà enregistré",
+    "verification_pending": "Votre inscription est en cours de vérification par le Barreau",
+    "verification_rejected": "Votre inscription a été rejetée par le Barreau : {reason}",
+    "not_verified": "Vous devez être vérifié par le Barreau du Cameroun pour souscrire une police"
+  },
+  "policy": {
+    "quote_expired": "Ce devis a expiré. Demandez-en un nouveau.",
+    "quote_already_converted": "Ce devis a déjà été converti en police",
+    "not_active": "Cette police n'est pas active",
+    "plan_unavailable": "Cette formule n'est plus disponible",
+    "no_rating_table": "Aucune tarification en vigueur pour cette formule"
+  },
+  "claims": {
+    "policy_not_active": "Vous ne pouvez déclarer un sinistre que sur une police active",
+    "incident_before_cover": "La date du sinistre est antérieure à la prise d'effet de la police",
+    "incident_in_future": "La date du sinistre ne peut pas être dans le futur",
+    "already_closed": "Ce sinistre est clôturé"
+  },
+  "payments": {
+    "installment_already_paid": "Cette échéance est déjà réglée",
+    "provider_unavailable": "Le service {provider} est momentanément indisponible. Réessayez ou choisissez un autre moyen de paiement.",
+    "invalid_msisdn": "Numéro de téléphone invalide pour {provider}",
+    "amount_mismatch": "Le montant reçu ne correspond pas au montant attendu",
+    "webhook_signature_invalid": "Signature de rappel invalide",
+    "refund_exceeds_payment": "Le remboursement dépasse le montant payé"
+  }
+}

@@ -1,0 +1,151 @@
+{
+  "common": {
+    "appName": "Lawyers Insurance Hub",
+    "signIn": "Sign in",
+    "signOut": "Sign out",
+    "email": "Email address",
+    "password": "Password",
+    "continue": "Continue",
+    "cancel": "Cancel",
+    "save": "Save",
+    "loading": "Loading…",
+    "language": "Language",
+    "currency": "XAF"
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "products": "Products",
+    "policies": "My policies",
+    "claims": "Claims",
+    "payments": "Payments",
+    "family": "Family",
+    "vehicles": "Vehicles",
+    "barPortal": "Bar portal",
+    "claimsQueue": "Claims queue"
+  },
+  "auth": {
+    "title": "Sign in to your account",
+    "subtitle": "For members of the Cameroon Bar Association",
+    "mfaTitle": "Two-factor authentication",
+    "mfaPrompt": "Enter the six-digit code from your authenticator app",
+    "forgotPassword": "Forgotten your password?",
+    "noAccount": "No account yet?",
+    "register": "Register"
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "coverSummary": "Cover summary",
+    "activePolicies": "{count, plural, =0 {No active policies} one {# active policy} other {# active policies}}",
+    "nextPayment": "Next payment",
+    "dueOn": "Due {date}",
+    "payNow": "Pay now",
+    "attention": "Needs attention",
+    "expiringSoon": "{policy} expires in {days, plural, one {# day} other {# days}}",
+    "renew": "Renew",
+    "claimsInFlight": "Claims in progress",
+    "quickActions": "Quick actions",
+    "fileClaim": "File a claim",
+    "getQuote": "Get a quote",
+    "certificates": "Certificates",
+    "emptyPolicies": "You have no policies yet. Here are the products most subscribed in your practice area."
+  },
+  "verification": {
+    "pending": "Awaiting Bar Association verification",
+    "pendingDetail": "You can browse products and request quotations now. Subscribing unlocks once the Bar confirms your membership.",
+    "rejected": "Registration rejected by the Bar Association",
+    "verified": "Account verified"
+  },
+  "products": {
+    "title": "Our products",
+    "compare": "Compare plans",
+    "from": "From",
+    "perYear": "per year",
+    "subscribe": "Subscribe",
+    "coverage": "Coverage",
+    "limit": "Limit",
+    "deductible": "Deductible",
+    "exclusions": "Exclusions"
+  },
+  "quote": {
+    "title": "Your quotation",
+    "premium": "Annual premium",
+    "installments": "Installments",
+    "installmentPlan": "{count, plural, one {Single payment} other {# installments}}",
+    "breakdown": "How this was calculated",
+    "basePremium": "Base premium",
+    "validUntil": "Valid until {date}",
+    "accept": "Subscribe to this quote"
+  },
+  "payment": {
+    "title": "Payment",
+    "chooseMethod": "Choose a payment method",
+    "orangeMoney": "Orange Money",
+    "mtnMomo": "MTN Mobile Money",
+    "card": "Bank card",
+    "bankTransfer": "Bank transfer",
+    "walletNumber": "Wallet number",
+    "pending": "Payment pending",
+    "ussdPrompt": "Confirm the payment on your handset. This page updates automatically.",
+    "retry": "Try again",
+    "changeMethod": "Use another method",
+    "succeeded": "Payment confirmed",
+    "receipt": "Download receipt"
+  },
+  "claims": {
+    "title": "Claims",
+    "file": "File a claim",
+    "step": "Step {current} of {total}",
+    "selectPolicy": "Policy",
+    "incidentDate": "Date of incident",
+    "incidentPlace": "Place",
+    "description": "Description",
+    "evidence": "Evidence",
+    "addPhoto": "Add a photo",
+    "addVideo": "Add a video",
+    "addDocument": "Add a document",
+    "amountClaimed": "Amount claimed",
+    "submit": "Submit the claim",
+    "status": {
+      "submitted": "Submitted",
+      "investigation": "Investigation",
+      "assessment": "Assessment",
+      "approved": "Approved",
+      "rejected": "Rejected",
+      "payment": "Payment",
+      "closed": "Closed"
+    },
+    "sla": {
+      "on_track": "On track",
+      "due_soon": "Due soon",
+      "breached": "Overdue",
+      "none": "—"
+    }
+  },
+  "policy": {
+    "status": {
+      "draft": "Draft",
+      "submitted": "Submitted",
+      "under_review": "Under review",
+      "approved": "Approved",
+      "active": "Active",
+      "suspended": "Suspended",
+      "expired": "Expired",
+      "cancelled": "Cancelled",
+      "renewed": "Renewed"
+    },
+    "number": "Policy number",
+    "period": "Cover period",
+    "downloadCertificate": "Download certificate"
+  },
+  "bar": {
+    "title": "Bar Association portal",
+    "queue": "Pending verifications",
+    "barNumber": "Bar number",
+    "admittedOn": "Admitted to the Bar",
+    "approve": "Approve",
+    "reject": "Reject",
+    "rejectReason": "Reason for rejection",
+    "rejectReasonRequired": "A reason is required when rejecting",
+    "slaWarning": "Waiting more than 24 hours"
+  }
+}

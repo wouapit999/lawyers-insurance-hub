@@ -1,0 +1,101 @@
+# Database migration Job, applied by the Azure deploy workflow BEFORE the new
+# pods roll out.
+#
+# The three phases must run in this order, and the ordering is the reason this
+# is a Job rather than an init container on the Deployment:
+#
+#   1. pre  — extensions and uuid_generate_v7(), needed by the table defaults
+#   2. prisma migrate deploy — the schema itself
+#   3. post — row-level security, partitions, partial indexes, constraints
+#
+# As an init container it would run once per pod, racing three replicas
+# against the same migration. As a Job it runs exactly once, and a failure
+# aborts the deploy before any new pod starts.
+#
+# Placeholders are substituted by the workflow.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: __JOB_NAME__
+  namespace: __NAMESPACE__
+  labels:
+    app: lih-api
+    component: migration
+spec:
+  # Migrations are idempotent but not free; two retries is enough for a
+  # transient connection failure without hammering a database that is down.
+  backoffLimit: 2
+  # Cleaned up after an hour, leaving enough time to read the logs after a
+  # failed deploy.
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app: lih-api
+        component: migration
+    spec:
+      restartPolicy: Never
+      serviceAccountName: lih-api
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1001
+        seccompProfile:
+          type: RuntimeDefault
+
+      containers:
+        - name: migrate
+          image: __IMAGE__
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ['ALL']
+
+          command: ['/bin/sh', '-c']
+          args:
+            - |
+              set -e
+              echo "==> 1/3 pre-migration SQL (extensions, uuidv7)"
+              node scripts/apply-sql.js pre
+
+              echo "==> 2/3 prisma migrate deploy"
+              npx prisma migrate deploy --schema prisma/schema.prisma
+
+              echo "==> 3/3 post-migration SQL (RLS, partitions, indexes)"
+              node scripts/apply-sql.js post
+
+              echo "==> reconciling roles, permissions and the product catalogue"
+              # Idempotent: adds permissions introduced in this release and
+              # revokes any removed from the catalogue. Skips demo accounts
+              # because NODE_ENV is production.
+              npx ts-node prisma/seed.ts
+
+              echo "Migration complete."
+
+          env:
+            - name: NODE_ENV
+              value: production
+          envFrom:
+            - secretRef:
+                name: lih-api-secrets
+
+          resources:
+            requests: { cpu: 200m, memory: 512Mi }
+            limits: { memory: 1Gi }
+
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: secrets-store
+              mountPath: /mnt/secrets
+              readOnly: true
+
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: secrets-store
+          csi:
+            driver: secrets-store.csi.k8s.io
+            readOnly: true
+            volumeAttributes:
+              secretProviderClass: lih-keyvault

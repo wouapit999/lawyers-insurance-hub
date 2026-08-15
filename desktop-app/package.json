@@ -1,0 +1,91 @@
+{
+  "name": "@lih/desktop",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Lawyers Insurance Hub — desktop application for Windows and macOS",
+  "author": "Roland Wouapit <rwouapit@bouquet-innovation.net> (Bouquet Innovation)",
+  "license": "UNLICENSED",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "npm run build && electron .",
+    "pack": "npm run build && electron-builder --dir",
+    "dist:win": "npm run build && electron-builder --win --publish never",
+    "dist:mac": "npm run build && electron-builder --mac --publish never",
+    "release": "npm run build && electron-builder --publish always"
+  },
+  "dependencies": {
+    "electron-updater": "^6.3.9",
+    "electron-log": "^5.2.4"
+  },
+  "devDependencies": {
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8",
+    "typescript": "^5.7.2",
+    "@types/node": "^22.10.2"
+  },
+  "build": {
+    "appId": "cm.lih.desktop",
+    "productName": "Lawyers Insurance Hub",
+    "copyright": "Copyright © 2026 Bouquet Innovation",
+    "artifactName": "LIH-${version}-${os}-${arch}.${ext}",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**/*",
+      "!**/*.map"
+    ],
+    "publish": [
+      {
+        "provider": "generic",
+        "url": "https://updates.lih.cm/desktop",
+        "channel": "latest"
+      }
+    ],
+    "win": {
+      "target": [
+        { "target": "nsis", "arch": ["x64", "arm64"] }
+      ],
+      "icon": "build/icon.ico",
+      "publisherName": "Bouquet Innovation",
+      "signingHashAlgorithms": ["sha256"],
+      "signtoolOptions": {
+        "sign": "./scripts/sign-windows.js"
+      }
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Lawyers Insurance Hub",
+      "installerLanguages": ["fr_FR", "en_US"],
+      "language": "1036",
+      "license": "build/license_fr.txt",
+      "deleteAppDataOnUninstall": false
+    },
+    "mac": {
+      "target": [
+        { "target": "dmg", "arch": ["x64", "arm64"] },
+        { "target": "zip", "arch": ["x64", "arm64"] }
+      ],
+      "icon": "build/icon.icns",
+      "category": "public.app-category.business",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "notarize": true
+    },
+    "dmg": {
+      "title": "Lawyers Insurance Hub ${version}",
+      "contents": [
+        { "x": 130, "y": 220 },
+        { "x": 410, "y": 220, "type": "link", "path": "/Applications" }
+      ]
+    }
+  }
+}

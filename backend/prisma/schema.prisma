@@ -1,0 +1,873 @@
+// ---------------------------------------------------------------------------
+// Lawyers Insurance Hub — data model
+//
+// Conventions enforced across every model:
+//   * UUID primary keys (uuidv7 supplied by the DB default, see migration SQL)
+//   * Money is BigInt XAF in WHOLE FRANCS. XAF has no minor unit (BR-02):
+//     there are no cents to store, so integers are exact and no rounding
+//     policy is ever needed. Never introduce a Float/Decimal for money.
+//   * tenantId on every business table — single tenant today, RLS-enforced
+//     isolation the day a second one arrives (blueprint §5.6).
+//   * Bilingual content is stored as paired *_en / *_fr columns so a single
+//     query serves either locale without a join (BR-03).
+//   * timestamptz everywhere (Prisma DateTime -> timestamptz via migration).
+// ---------------------------------------------------------------------------
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ===========================================================================
+// Identity & access
+// ===========================================================================
+
+enum UserStatus {
+  pending
+  active
+  suspended
+  closed
+}
+
+enum AuthProvider {
+  local
+  google
+  apple
+}
+
+enum Locale {
+  en
+  fr
+}
+
+model User {
+  id              String       @id @default(uuid()) @db.Uuid
+  tenantId        String       @map("tenant_id") @db.Uuid
+  email           String       @unique
+  phoneE164       String?      @unique @map("phone_e164")
+  passwordHash    String?      @map("password_hash") // null for social-only accounts
+  authProvider    AuthProvider @default(local) @map("auth_provider")
+  preferredLang   Locale       @default(fr) @map("preferred_lang")
+  emailVerifiedAt DateTime?    @map("email_verified_at") @db.Timestamptz(6)
+  phoneVerifiedAt DateTime?    @map("phone_verified_at") @db.Timestamptz(6)
+  mfaSecret       String?      @map("mfa_secret") // encrypted at rest (PII envelope)
+  mfaEnabled      Boolean      @default(false) @map("mfa_enabled")
+  status          UserStatus   @default(pending)
+  failedLogins    Int          @default(0) @map("failed_logins")
+  lockedUntil     DateTime?    @map("locked_until") @db.Timestamptz(6)
+  createdAt       DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  roles          UserRole[]
+  lawyerProfile  LawyerProfile?
+  sessions       Session[]
+  devices        Device[]
+  otpCodes       OtpCode[]
+  documents      Document[]
+  notifications  Notification[]
+  claimsFiled    Claim[]          @relation("ClaimFiledBy")
+  claimsAssigned Claim[]          @relation("ClaimAssignedTo")
+  claimEvents    ClaimEvent[]
+  policiesSold   Policy[]         @relation("PolicySoldByAgent")
+  verifications  BarVerification[] @relation("VerificationDecidedBy")
+
+  @@index([tenantId, status])
+  @@map("users")
+}
+
+model Role {
+  id          String   @id @default(uuid()) @db.Uuid
+  tenantId    String   @map("tenant_id") @db.Uuid
+  code        String   @unique // lawyer, family_member, agent, claims_officer, ...
+  nameEn      String   @map("name_en")
+  nameFr      String   @map("name_fr")
+  isSystem    Boolean  @default(false) @map("is_system")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  users       UserRole[]
+  permissions RolePermission[]
+
+  @@map("roles")
+}
+
+/// Permissions are granular `resource:action:scope` triples, e.g.
+/// `claims:approve:all`, `policies:read:own`. Roles bundle them, and the
+/// bundle is editable from the admin portal with no redeploy.
+model Permission {
+  id          String   @id @default(uuid()) @db.Uuid
+  code        String   @unique
+  description String
+
+  roles RolePermission[]
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  roleId       String @map("role_id") @db.Uuid
+  permissionId String @map("permission_id") @db.Uuid
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+model UserRole {
+  userId    String   @map("user_id") @db.Uuid
+  roleId    String   @map("role_id") @db.Uuid
+  grantedAt DateTime @default(now()) @map("granted_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role Role @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@id([userId, roleId])
+  @@map("user_roles")
+}
+
+/// One row per issued refresh token. Rotation replaces the row and revokes
+/// the parent; a replayed parent token means theft, so the whole chain dies.
+model Session {
+  id               String    @id @default(uuid()) @db.Uuid
+  userId           String    @map("user_id") @db.Uuid
+  refreshTokenHash String    @unique @map("refresh_token_hash")
+  deviceId         String?   @map("device_id") @db.Uuid
+  ip               String?
+  userAgent        String?   @map("user_agent")
+  expiresAt        DateTime  @map("expires_at") @db.Timestamptz(6)
+  revokedAt        DateTime? @map("revoked_at") @db.Timestamptz(6)
+  replacedById     String?   @map("replaced_by_id") @db.Uuid
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  device Device? @relation(fields: [deviceId], references: [id])
+
+  @@index([userId, revokedAt])
+  @@map("sessions")
+}
+
+model Device {
+  id           String    @id @default(uuid()) @db.Uuid
+  userId       String    @map("user_id") @db.Uuid
+  fingerprint  String    @map("fingerprint")
+  label        String?
+  platform     String? // ios | android | web | desktop
+  pushToken    String?   @map("push_token")
+  biometricKey String?   @map("biometric_key")
+  lastSeenAt   DateTime? @map("last_seen_at") @db.Timestamptz(6)
+  trusted      Boolean   @default(false)
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sessions Session[]
+
+  @@unique([userId, fingerprint])
+  @@map("devices")
+}
+
+enum OtpPurpose {
+  phone_verification
+  email_verification
+  password_reset
+  mfa_challenge
+  step_up
+}
+
+model OtpCode {
+  id         String     @id @default(uuid()) @db.Uuid
+  userId     String     @map("user_id") @db.Uuid
+  purpose    OtpPurpose
+  codeHash   String     @map("code_hash")
+  attempts   Int        @default(0)
+  expiresAt  DateTime   @map("expires_at") @db.Timestamptz(6)
+  consumedAt DateTime?  @map("consumed_at") @db.Timestamptz(6)
+  createdAt  DateTime   @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, purpose, consumedAt])
+  @@map("otp_codes")
+}
+
+// ===========================================================================
+// Members — lawyers, firms, family, vehicles
+// ===========================================================================
+
+enum VerificationStatus {
+  pending
+  verified
+  rejected
+}
+
+model LawFirm {
+  id           String   @id @default(uuid()) @db.Uuid
+  tenantId     String   @map("tenant_id") @db.Uuid
+  name         String
+  registrationNo String? @map("registration_no")
+  address      Json?
+  city         String?
+  phone        String?
+  email        String?
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  lawyers LawyerProfile[]
+  assets  FirmAsset[]
+
+  @@map("law_firms")
+}
+
+enum FirmAssetKind {
+  office
+  equipment
+  computer
+  server
+  furniture
+  document_archive
+  employee
+}
+
+model FirmAsset {
+  id          String        @id @default(uuid()) @db.Uuid
+  tenantId    String        @map("tenant_id") @db.Uuid
+  firmId      String        @map("firm_id") @db.Uuid
+  kind        FirmAssetKind
+  label       String
+  description String?
+  valueXaf    BigInt        @map("value_xaf") // whole francs
+  quantity    Int           @default(1)
+  acquiredOn  DateTime?     @map("acquired_on") @db.Date
+  riskScore   Int?          @map("risk_score") // 0-100, from guided assessment
+  createdAt   DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  firm LawFirm @relation(fields: [firmId], references: [id], onDelete: Cascade)
+
+  @@index([firmId, kind])
+  @@map("firm_assets")
+}
+
+model LawyerProfile {
+  id                  String             @id @default(uuid()) @db.Uuid
+  tenantId            String             @map("tenant_id") @db.Uuid
+  userId              String             @unique @map("user_id") @db.Uuid
+  barNumber           String             @unique @map("bar_number")
+  fullName            String             @map("full_name")
+  /// Encrypted with the PII envelope key (Azure Key Vault in deployed envs).
+  /// Masked in every API response and log line.
+  nationalIdNo        String?            @map("national_id_no")
+  /// Encrypted, as above.
+  passportNo          String?            @map("passport_no")
+  professionalAddress Json?              @map("professional_address")
+  personalAddress     Json?              @map("personal_address")
+  lawFirmId           String?            @map("law_firm_id") @db.Uuid
+  specialization      String[]
+  admittedOn          DateTime           @map("admitted_on") @db.Date
+  verificationStatus  VerificationStatus @default(pending) @map("verification_status")
+  verifiedAt          DateTime?          @map("verified_at") @db.Timestamptz(6)
+  createdAt           DateTime           @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime           @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  user          User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lawFirm       LawFirm?          @relation(fields: [lawFirmId], references: [id])
+  verifications BarVerification[]
+  beneficiaries Beneficiary[]
+  vehicles      Vehicle[]
+  policies      Policy[]
+
+  @@index([tenantId, verificationStatus])
+  @@map("lawyer_profiles")
+}
+
+/// The Bar Association's own record of a membership check. Append a new row
+/// per attempt — the history is evidence for the partnership and for audit.
+model BarVerification {
+  id            String             @id @default(uuid()) @db.Uuid
+  tenantId      String             @map("tenant_id") @db.Uuid
+  lawyerId      String             @map("lawyer_id") @db.Uuid
+  status        VerificationStatus @default(pending)
+  submittedAt   DateTime           @default(now()) @map("submitted_at") @db.Timestamptz(6)
+  decidedAt     DateTime?          @map("decided_at") @db.Timestamptz(6)
+  decidedById   String?            @map("decided_by_id") @db.Uuid
+  rejectionReason String?          @map("rejection_reason")
+  /// Snapshot of what the Bar register held at decision time.
+  registrySnapshot Json?           @map("registry_snapshot")
+  slaDueAt      DateTime?          @map("sla_due_at") @db.Timestamptz(6)
+
+  lawyer    LawyerProfile @relation(fields: [lawyerId], references: [id], onDelete: Cascade)
+  decidedBy User?         @relation("VerificationDecidedBy", fields: [decidedById], references: [id])
+
+  @@index([tenantId, status, submittedAt])
+  @@map("bar_verifications")
+}
+
+enum RelationshipType {
+  spouse
+  child
+  parent
+  dependent
+}
+
+model Beneficiary {
+  id             String           @id @default(uuid()) @db.Uuid
+  tenantId       String           @map("tenant_id") @db.Uuid
+  lawyerId       String           @map("lawyer_id") @db.Uuid
+  fullName       String           @map("full_name")
+  relationship   RelationshipType
+  dateOfBirth    DateTime         @map("date_of_birth") @db.Date
+  nationalIdNo   String?          @map("national_id_no") // encrypted
+  phoneE164      String?          @map("phone_e164")
+  proofDocumentId String?         @map("proof_document_id") @db.Uuid
+  medicalCoverage Boolean         @default(false) @map("medical_coverage")
+  cardNumber     String?          @unique @map("card_number")
+  createdAt      DateTime         @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  lawyer   LawyerProfile        @relation(fields: [lawyerId], references: [id], onDelete: Cascade)
+  policies PolicyBeneficiary[]
+
+  @@index([lawyerId])
+  @@map("beneficiaries")
+}
+
+model Vehicle {
+  id                 String   @id @default(uuid()) @db.Uuid
+  tenantId           String   @map("tenant_id") @db.Uuid
+  lawyerId           String   @map("lawyer_id") @db.Uuid
+  registrationNumber String   @map("registration_number")
+  chassisNumber      String   @map("chassis_number")
+  engineNumber       String   @map("engine_number")
+  make               String
+  model              String
+  year               Int
+  valueXaf           BigInt   @map("value_xaf")
+  seats              Int?
+  usage              String?  // private | professional
+  createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  lawyer LawyerProfile @relation(fields: [lawyerId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, registrationNumber])
+  @@index([lawyerId])
+  @@map("vehicles")
+}
+
+// ===========================================================================
+// Products, pricing, policies
+// ===========================================================================
+
+enum ProductCode {
+  PLI  // professional liability
+  PRAC // legal practice
+  MED  // medical
+  FAM  // family
+  PERS // personal
+  ACC  // accident
+  VEH  // vehicle
+  FIRM // law firm
+  PROP // property
+}
+
+model Product {
+  id            String      @id @default(uuid()) @db.Uuid
+  tenantId      String      @map("tenant_id") @db.Uuid
+  code          ProductCode @unique
+  nameEn        String      @map("name_en")
+  nameFr        String      @map("name_fr")
+  descriptionEn String?     @map("description_en")
+  descriptionFr String?     @map("description_fr")
+  isActive      Boolean     @default(true) @map("is_active")
+  sortOrder     Int         @default(0) @map("sort_order")
+
+  plans Plan[]
+
+  @@map("products")
+}
+
+model Plan {
+  id                 String   @id @default(uuid()) @db.Uuid
+  tenantId           String   @map("tenant_id") @db.Uuid
+  productId          String   @map("product_id") @db.Uuid
+  code               String
+  nameEn             String   @map("name_en")
+  nameFr             String   @map("name_fr")
+  /// Limits, deductibles and exclusions. Shape varies per product; rendered
+  /// bilingually by the comparison UI.
+  coverage           Json
+  basePremiumXaf     BigInt   @map("base_premium_xaf")
+  installmentOptions Int[]    @default([1, 2, 4, 12]) @map("installment_options")
+  isActive           Boolean  @default(true) @map("is_active")
+  sortOrder          Int      @default(0) @map("sort_order")
+
+  product      Product       @relation(fields: [productId], references: [id])
+  ratingTables RatingTable[]
+  quotes       Quote[]
+  policies     Policy[]
+
+  @@unique([productId, code])
+  @@map("plans")
+}
+
+/// Pricing is versioned and never mutated. An in-force policy keeps a foreign
+/// key to the exact table version it was priced with, so a repricing can never
+/// retroactively change what a lawyer already bought.
+model RatingTable {
+  id            String   @id @default(uuid()) @db.Uuid
+  tenantId      String   @map("tenant_id") @db.Uuid
+  planId        String   @map("plan_id") @db.Uuid
+  version       Int
+  /// Factor definitions consumed by the rating engine. See
+  /// packages/domain/src/rating for the evaluation semantics.
+  factors       Json
+  effectiveFrom DateTime @map("effective_from") @db.Date
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  plan     Plan     @relation(fields: [planId], references: [id])
+  quotes   Quote[]
+  policies Policy[]
+
+  @@unique([planId, version])
+  @@index([planId, effectiveFrom])
+  @@map("rating_tables")
+}
+
+model Quote {
+  id             String   @id @default(uuid()) @db.Uuid
+  tenantId       String   @map("tenant_id") @db.Uuid
+  lawyerId       String   @map("lawyer_id") @db.Uuid
+  planId         String   @map("plan_id") @db.Uuid
+  ratingTableId  String   @map("rating_table_id") @db.Uuid
+  factors        Json
+  premiumXaf     BigInt   @map("premium_xaf")
+  installments   Int      @default(1)
+  installmentXaf BigInt   @map("installment_xaf")
+  /// Per-factor contribution, kept so the UI can explain the price and so a
+  /// dispute can be reconstructed years later.
+  breakdown      Json
+  validUntil     DateTime @map("valid_until") @db.Timestamptz(6)
+  convertedAt    DateTime? @map("converted_at") @db.Timestamptz(6)
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  plan        Plan        @relation(fields: [planId], references: [id])
+  ratingTable RatingTable @relation(fields: [ratingTableId], references: [id])
+  policy      Policy?
+
+  @@index([lawyerId, createdAt])
+  @@map("quotes")
+}
+
+enum PolicyStatus {
+  draft
+  submitted
+  under_review
+  approved
+  active
+  suspended
+  expired
+  cancelled
+  renewed
+}
+
+model Policy {
+  id            String       @id @default(uuid()) @db.Uuid
+  tenantId      String       @map("tenant_id") @db.Uuid
+  policyNumber  String       @unique @map("policy_number") // LIH-PLI-2026-000123
+  lawyerId      String       @map("lawyer_id") @db.Uuid
+  planId        String       @map("plan_id") @db.Uuid
+  ratingTableId String       @map("rating_table_id") @db.Uuid
+  quoteId       String?      @unique @map("quote_id") @db.Uuid
+  status        PolicyStatus @default(draft)
+  premiumXaf    BigInt       @map("premium_xaf")
+  effectiveFrom DateTime?    @map("effective_from") @db.Date
+  effectiveTo   DateTime?    @map("effective_to") @db.Date
+  renewedFromId String?      @map("renewed_from_id") @db.Uuid
+  /// What the policy is written over: {vehicleId} | {firmId} | {beneficiaryIds}
+  subjectRef    Json?        @map("subject_ref")
+  soldByAgentId String?      @map("sold_by_agent_id") @db.Uuid
+  cancelledAt   DateTime?    @map("cancelled_at") @db.Timestamptz(6)
+  cancelReason  String?      @map("cancel_reason")
+  createdAt     DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt     DateTime     @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  lawyer        LawyerProfile       @relation(fields: [lawyerId], references: [id])
+  plan          Plan                @relation(fields: [planId], references: [id])
+  ratingTable   RatingTable         @relation(fields: [ratingTableId], references: [id])
+  quote         Quote?              @relation(fields: [quoteId], references: [id])
+  renewedFrom   Policy?             @relation("PolicyRenewal", fields: [renewedFromId], references: [id])
+  renewals      Policy[]            @relation("PolicyRenewal")
+  soldByAgent   User?               @relation("PolicySoldByAgent", fields: [soldByAgentId], references: [id])
+  beneficiaries PolicyBeneficiary[]
+  invoices      Invoice[]
+  claims        Claim[]
+  events        PolicyEvent[]
+
+  @@index([lawyerId, status])
+  @@index([tenantId, status])
+  // Drives the nightly renewal sweep — partial index keeps it small.
+  @@index([effectiveTo])
+  @@map("policies")
+}
+
+model PolicyBeneficiary {
+  policyId      String @map("policy_id") @db.Uuid
+  beneficiaryId String @map("beneficiary_id") @db.Uuid
+  coverageLevel String @default("standard") @map("coverage_level")
+
+  policy      Policy      @relation(fields: [policyId], references: [id], onDelete: Cascade)
+  beneficiary Beneficiary @relation(fields: [beneficiaryId], references: [id], onDelete: Cascade)
+
+  @@id([policyId, beneficiaryId])
+  @@map("policy_beneficiaries")
+}
+
+/// Append-only lifecycle trail for a policy. Mirrors ClaimEvent.
+model PolicyEvent {
+  id         String        @id @default(uuid()) @db.Uuid
+  policyId   String        @map("policy_id") @db.Uuid
+  fromStatus PolicyStatus?  @map("from_status")
+  toStatus   PolicyStatus  @map("to_status")
+  actorId    String?       @map("actor_id") @db.Uuid
+  note       String?
+  createdAt  DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  policy Policy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+
+  @@index([policyId, createdAt])
+  @@map("policy_events")
+}
+
+// ===========================================================================
+// Billing & payments
+// ===========================================================================
+
+enum InvoiceStatus {
+  open
+  partial
+  paid
+  overdue
+  void
+}
+
+model Invoice {
+  id          String        @id @default(uuid()) @db.Uuid
+  tenantId    String        @map("tenant_id") @db.Uuid
+  policyId    String        @map("policy_id") @db.Uuid
+  invoiceNo   String        @unique @map("invoice_no")
+  totalXaf    BigInt        @map("total_xaf")
+  status      InvoiceStatus @default(open)
+  issuedAt    DateTime      @default(now()) @map("issued_at") @db.Timestamptz(6)
+
+  policy       Policy        @relation(fields: [policyId], references: [id])
+  installments Installment[]
+
+  @@index([policyId, status])
+  @@map("invoices")
+}
+
+enum InstallmentStatus {
+  pending
+  paid
+  overdue
+  waived
+}
+
+model Installment {
+  id        String            @id @default(uuid()) @db.Uuid
+  invoiceId String            @map("invoice_id") @db.Uuid
+  seq       Int
+  amountXaf BigInt            @map("amount_xaf")
+  dueOn     DateTime          @map("due_on") @db.Date
+  status    InstallmentStatus @default(pending)
+  paidAt    DateTime?         @map("paid_at") @db.Timestamptz(6)
+  retryCount Int              @default(0) @map("retry_count")
+
+  invoice  Invoice   @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  payments Payment[]
+
+  @@unique([invoiceId, seq])
+  @@index([status, dueOn])
+  @@map("installments")
+}
+
+enum PaymentProviderCode {
+  orange_money
+  mtn_momo
+  card
+  bank_transfer
+}
+
+enum PaymentStatus {
+  initiated
+  pending
+  succeeded
+  failed
+  reversed
+}
+
+enum PaymentDirection {
+  in  // premium collected
+  out // claim payout or refund
+}
+
+model Payment {
+  id             String              @id @default(uuid()) @db.Uuid
+  tenantId       String              @map("tenant_id") @db.Uuid
+  installmentId  String?             @map("installment_id") @db.Uuid
+  claimId        String?             @map("claim_id") @db.Uuid
+  refundOfId     String?             @map("refund_of_id") @db.Uuid
+  direction      PaymentDirection
+  provider       PaymentProviderCode
+  /// Gateway transaction id. Unique per provider — the second webhook
+  /// carrying the same reference is a duplicate, not a second payment.
+  providerRef    String?             @map("provider_ref")
+  amountXaf      BigInt              @map("amount_xaf")
+  status         PaymentStatus       @default(initiated)
+  /// Client-supplied key. The unique constraint is what makes a retried
+  /// "pay" request safe: the second attempt returns the first payment.
+  idempotencyKey String              @unique @map("idempotency_key")
+  msisdn         String? // mobile money payer number, E.164
+  failureReason  String?             @map("failure_reason")
+  rawCallback    Json?               @map("raw_callback")
+  reconciledAt   DateTime?           @map("reconciled_at") @db.Timestamptz(6)
+  createdAt      DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt      DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  installment  Installment?  @relation(fields: [installmentId], references: [id])
+  claim        Claim?        @relation(fields: [claimId], references: [id])
+  refundOf     Payment?      @relation("PaymentRefund", fields: [refundOfId], references: [id])
+  refunds      Payment[]     @relation("PaymentRefund")
+  ledgerEntries LedgerEntry[]
+
+  @@unique([provider, providerRef])
+  @@index([tenantId, status, createdAt])
+  @@map("payments")
+}
+
+enum LedgerEntryType {
+  premium_collected
+  claim_paid
+  refund_issued
+  fee_charged
+}
+
+/// Double-entry-lite ledger. Every money movement writes exactly one row,
+/// and the nightly reconciliation matches these against provider settlement
+/// reports (blueprint §5.4).
+model LedgerEntry {
+  id          String          @id @default(uuid()) @db.Uuid
+  tenantId    String          @map("tenant_id") @db.Uuid
+  paymentId   String          @map("payment_id") @db.Uuid
+  entryType   LedgerEntryType @map("entry_type")
+  amountXaf   BigInt          @map("amount_xaf")
+  balanceAfter BigInt?        @map("balance_after")
+  description String?
+  createdAt   DateTime        @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  payment Payment @relation(fields: [paymentId], references: [id])
+
+  @@index([tenantId, createdAt])
+  @@map("ledger_entries")
+}
+
+model ReconciliationRun {
+  id            String    @id @default(uuid()) @db.Uuid
+  tenantId      String    @map("tenant_id") @db.Uuid
+  provider      PaymentProviderCode
+  runDate       DateTime  @map("run_date") @db.Date
+  matchedCount  Int       @default(0) @map("matched_count")
+  orphanCount   Int       @default(0) @map("orphan_count")
+  mismatchCount Int       @default(0) @map("mismatch_count")
+  /// Orphans and mismatches, surfaced on the Finance dashboard.
+  findings      Json?
+  completedAt   DateTime? @map("completed_at") @db.Timestamptz(6)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@unique([provider, runDate])
+  @@map("reconciliation_runs")
+}
+
+// ===========================================================================
+// Claims
+// ===========================================================================
+
+enum ClaimStatus {
+  submitted
+  investigation
+  assessment
+  approved
+  rejected
+  payment
+  closed
+}
+
+model Claim {
+  id           String      @id @default(uuid()) @db.Uuid
+  tenantId     String      @map("tenant_id") @db.Uuid
+  claimNumber  String      @unique @map("claim_number")
+  policyId     String      @map("policy_id") @db.Uuid
+  filedById    String      @map("filed_by_id") @db.Uuid
+  status       ClaimStatus @default(submitted)
+  incidentAt   DateTime    @map("incident_at") @db.Timestamptz(6)
+  incidentPlace String?    @map("incident_place")
+  incidentGeo  Json?       @map("incident_geo")
+  description  String
+  claimedXaf   BigInt?     @map("claimed_xaf")
+  approvedXaf  BigInt?     @map("approved_xaf")
+  /// 0.000–1.000, assigned by the fraud model. Advisory only: it sorts the
+  /// officer's queue, it never auto-rejects (blueprint §5.5).
+  fraudScore   Decimal?    @map("fraud_score") @db.Decimal(4, 3)
+  fraudFactors Json?       @map("fraud_factors")
+  assignedToId String?     @map("assigned_to_id") @db.Uuid
+  slaDueAt     DateTime?   @map("sla_due_at") @db.Timestamptz(6)
+  rejectionReason String?  @map("rejection_reason")
+  closedAt     DateTime?   @map("closed_at") @db.Timestamptz(6)
+  createdAt    DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt    DateTime    @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  policy     Policy       @relation(fields: [policyId], references: [id])
+  filedBy    User         @relation("ClaimFiledBy", fields: [filedById], references: [id])
+  assignedTo User?        @relation("ClaimAssignedTo", fields: [assignedToId], references: [id])
+  events     ClaimEvent[]
+  documents  Document[]
+  payments   Payment[]
+
+  @@index([tenantId, status, slaDueAt])
+  @@index([policyId])
+  @@map("claims")
+}
+
+/// Append-only. Every transition writes a row with its actor — this table is
+/// the evidence trail a regulator or a court would ask for.
+model ClaimEvent {
+  id         String       @id @default(uuid()) @db.Uuid
+  claimId    String       @map("claim_id") @db.Uuid
+  fromStatus ClaimStatus? @map("from_status")
+  toStatus   ClaimStatus  @map("to_status")
+  actorId    String       @map("actor_id") @db.Uuid
+  note       String?
+  metadata   Json?
+  createdAt  DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  claim Claim @relation(fields: [claimId], references: [id], onDelete: Cascade)
+  actor User  @relation(fields: [actorId], references: [id])
+
+  @@index([claimId, createdAt])
+  @@map("claim_events")
+}
+
+// ===========================================================================
+// Documents, notifications, audit
+// ===========================================================================
+
+enum DocumentKind {
+  policy_certificate
+  receipt
+  claim_evidence
+  contract
+  id_document
+  vehicle_document
+  beneficiary_card
+  other
+}
+
+model Document {
+  id            String       @id @default(uuid()) @db.Uuid
+  tenantId      String       @map("tenant_id") @db.Uuid
+  ownerId       String       @map("owner_id") @db.Uuid
+  claimId       String?      @map("claim_id") @db.Uuid
+  kind          DocumentKind
+  fileName      String       @map("file_name")
+  mimeType      String       @map("mime_type")
+  sizeBytes     Int          @map("size_bytes")
+  /// Blob key. File bytes never live in Postgres.
+  blobPath      String       @map("blob_path")
+  contentSha256 String       @map("content_sha256")
+  version       Int          @default(1)
+  ocrText       String?      @map("ocr_text")
+  language      String?
+  entityRef     Json?        @map("entity_ref")
+  createdAt     DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  owner User   @relation(fields: [ownerId], references: [id])
+  claim Claim? @relation(fields: [claimId], references: [id])
+
+  @@index([ownerId, kind])
+  @@index([claimId])
+  @@map("documents")
+}
+
+enum NotificationChannel {
+  email
+  sms
+  push
+  whatsapp
+}
+
+enum NotificationStatus {
+  queued
+  sent
+  delivered
+  failed
+}
+
+model Notification {
+  id         String              @id @default(uuid()) @db.Uuid
+  tenantId   String              @map("tenant_id") @db.Uuid
+  userId     String              @map("user_id") @db.Uuid
+  channel    NotificationChannel
+  templateKey String             @map("template_key")
+  locale     Locale
+  payload    Json?
+  status     NotificationStatus  @default(queued)
+  sentAt     DateTime?           @map("sent_at") @db.Timestamptz(6)
+  failureReason String?          @map("failure_reason")
+  /// Guards against double-sending the same reminder on a retry.
+  dedupeKey  String?             @unique @map("dedupe_key")
+  createdAt  DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+  @@map("notifications")
+}
+
+/// Append-only, partitioned monthly in the migration SQL. Retained 7 years.
+model AuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  tenantId   String   @map("tenant_id") @db.Uuid
+  actorId    String?  @map("actor_id") @db.Uuid
+  action     String // policy.approve, claim.reject, role.grant, ...
+  entityType String   @map("entity_type")
+  entityId   String?  @map("entity_id") @db.Uuid
+  before     Json?
+  after      Json?
+  reason     String?
+  ip         String?
+  userAgent  String?  @map("user_agent")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([tenantId, entityType, entityId])
+  @@index([actorId, createdAt])
+  @@map("audit_logs")
+}
+
+/// Transactional outbox. A domain event is written in the same transaction as
+/// the state change, then relayed to RabbitMQ. This is what lets the modules
+/// become separate services later without losing an event on the way out.
+model OutboxEvent {
+  id            String    @id @default(uuid()) @db.Uuid
+  tenantId      String    @map("tenant_id") @db.Uuid
+  eventType     String    @map("event_type") // policy.activated, claim.approved, ...
+  aggregateType String    @map("aggregate_type")
+  aggregateId   String    @map("aggregate_id") @db.Uuid
+  payload       Json
+  publishedAt   DateTime? @map("published_at") @db.Timestamptz(6)
+  attempts      Int       @default(0)
+  lastError     String?   @map("last_error")
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([publishedAt, createdAt])
+  @@map("outbox_events")
+}

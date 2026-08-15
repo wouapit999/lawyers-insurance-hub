@@ -1,0 +1,19 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    // Pinned explicitly. Without it TypeScript infers the common root from
+    // every included file — and prisma/seed.ts imports the domain package by
+    // relative path, which lifts the root to the monorepo and emits
+    // dist/apps/api/src/main.js instead of dist/main.js.
+    "rootDir": "./src"
+  },
+  "include": ["src/**/*"],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "test",
+    "prisma",
+    "**/*.spec.ts",
+    "**/*.test.ts"
+  ]
+}

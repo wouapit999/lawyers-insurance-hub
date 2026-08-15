@@ -1,0 +1,128 @@
+name: Deploy · Vercel
+
+# Step 10: deploy the Next.js web app to Vercel.
+#
+# Builds happen HERE rather than on Vercel's builders (`vercel build` then
+# `--prebuilt`). Two reasons: the web app imports @lih/domain from the
+# monorepo, which Vercel's default detection does not build; and it means the
+# artifact that passed CI is the artifact that ships, rather than a second
+# build from source that could differ.
+
+on:
+  push:
+    branches: [main, develop, staging, production]
+    paths:
+      - 'frontend-web/**'
+      - 'packages/**'
+      - 'vercel.json'
+      - '.github/workflows/deploy-vercel.yml'
+  pull_request:
+    branches: [main, develop, staging]
+    paths:
+      - 'frontend-web/**'
+      - 'packages/**'
+  workflow_dispatch:
+
+concurrency:
+  group: vercel-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  pull-requests: write   # to comment the preview URL on the PR
+
+env:
+  VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+  VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+jobs:
+  deploy:
+    name: Build and deploy
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ github.ref == 'refs/heads/production' && 'production' || 'preview' }}
+      url: ${{ steps.deploy.outputs.url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - run: npm ci
+
+      # The web app imports the shared domain package for money formatting and
+      # policy status labels; without this the Vercel build cannot resolve it.
+      - name: Build shared domain package
+        run: npm run build --workspace @lih/domain
+
+      - name: Install Vercel CLI
+        run: npm install --global vercel@latest
+
+      - name: Determine target
+        id: target
+        run: |
+          if [ "${{ github.ref }}" = "refs/heads/production" ]; then
+            echo "env=production" >> "$GITHUB_OUTPUT"
+            echo "flag=--prod"    >> "$GITHUB_OUTPUT"
+          else
+            echo "env=preview" >> "$GITHUB_OUTPUT"
+            echo "flag="       >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Pull Vercel environment configuration
+        run: |
+          vercel pull --yes \
+            --environment=${{ steps.target.outputs.env }} \
+            --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Build
+        run: vercel build ${{ steps.target.outputs.flag }} --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Deploy prebuilt artifact
+        id: deploy
+        run: |
+          URL=$(vercel deploy --prebuilt ${{ steps.target.outputs.flag }} \
+                  --token=${{ secrets.VERCEL_TOKEN }})
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+          echo "Deployed to $URL"
+
+      - name: Verify the deployment answers in both languages
+        run: |
+          URL="${{ steps.deploy.outputs.url }}"
+          # French is the default locale; a redirect to /en on a bare request
+          # would mean the locale middleware regressed.
+          curl -fsS -o /dev/null -w '%{http_code}\n' "$URL/fr" | grep -q '^200$'
+          curl -fsS -o /dev/null -w '%{http_code}\n' "$URL/en" | grep -q '^200$'
+          echo "Both locales served."
+
+      - name: Check the security headers actually shipped
+        run: |
+          URL="${{ steps.deploy.outputs.url }}"
+          HEADERS=$(curl -fsSI "$URL/fr")
+          for header in strict-transport-security x-content-type-options x-frame-options content-security-policy; do
+            echo "$HEADERS" | grep -iq "^$header:" || {
+              echo "::error::Missing security header: $header (check vercel.json)"; exit 1; }
+          done
+          echo "Security headers present."
+
+      - name: Comment the preview URL on the pull request
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const url = '${{ steps.deploy.outputs.url }}';
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: [
+                '### Preview deployment ready',
+                '',
+                `**Français** — ${url}/fr`,
+                `**English** — ${url}/en`,
+                '',
+                '_Check French layouts first: French text runs about 20% longer than English._',
+              ].join('\n'),
+            });

@@ -1,0 +1,36 @@
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule: { interval: weekly, day: monday, time: "05:00", timezone: Africa/Douala }
+    open-pull-requests-limit: 10
+    labels: [dependencies]
+    groups:
+      # One PR per family. Nest and Prisma packages must move together or the
+      # build breaks on a version mismatch between peer packages.
+      nestjs:
+        patterns: ["@nestjs/*"]
+      prisma:
+        patterns: ["prisma", "@prisma/*"]
+      dev-tooling:
+        dependency-type: development
+        patterns: ["jest", "ts-jest", "@types/*", "typescript"]
+    ignore:
+      # Majors are deliberate migrations, not weekly noise.
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+
+  - package-ecosystem: docker
+    directory: /backend
+    schedule: { interval: weekly }
+    labels: [dependencies, docker]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly }
+    labels: [dependencies, ci]
+
+  - package-ecosystem: pub
+    directory: /mobile-app
+    schedule: { interval: weekly }
+    labels: [dependencies, mobile]

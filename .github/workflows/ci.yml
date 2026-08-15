@@ -1,0 +1,307 @@
+name: CI
+
+# Steps 1–6 of the enterprise pipeline: lint, unit tests, integration tests,
+# frontend build, backend build, mobile build.
+#
+# Jobs are split by concern rather than run as one long script, so a failure
+# names itself in the checks list and a re-run costs only the failing part.
+# Path filters mean a mobile-only change does not rebuild the backend.
+
+on:
+  push:
+    branches: [main, develop, staging, production]
+  pull_request:
+    branches: [main, develop, staging, production]
+  workflow_dispatch:
+
+concurrency:
+  # A new push supersedes an in-flight run on the same ref. Never cancel on
+  # production — a half-cancelled release pipeline is worse than a slow one.
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/production' }}
+
+env:
+  NODE_VERSION: '22'
+  FLUTTER_VERSION: '3.27.1'
+
+permissions:
+  contents: read
+
+jobs:
+  # ==========================================================================
+  changes:
+    name: Detect changed areas
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      web: ${{ steps.filter.outputs.web }}
+      mobile: ${{ steps.filter.outputs.mobile }}
+      desktop: ${{ steps.filter.outputs.desktop }}
+      infra: ${{ steps.filter.outputs.infra }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            backend:
+              - 'backend/**'
+              - 'packages/**'
+              - 'package.json'
+              - 'package-lock.json'
+            web:
+              - 'frontend-web/**'
+              - 'packages/**'
+            mobile:
+              - 'mobile-app/**'
+            desktop:
+              - 'desktop-app/**'
+            infra:
+              - 'infrastructure/**'
+              - '.github/workflows/**'
+
+  # ==========================================================================
+  # Step 1 — Lint
+  # ==========================================================================
+  lint:
+    name: Step 1 · Lint
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.backend == 'true' || needs.changes.outputs.web == 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - name: Typecheck domain package
+        run: npm run typecheck --workspace @lih/domain
+      - name: Typecheck backend
+        run: cd backend && npx tsc -p tsconfig.json --noEmit
+      - name: Verify no hardcoded user-facing strings
+        # Rule 6 in CONTRIBUTING: every member-visible string is bilingual and
+        # lives in the i18n catalogues. This catches the common regression of
+        # throwing a raw English message from a service.
+        run: |
+          if grep -rnE "throw new (Bad|Not|Forbidden|Unauthorized|Conflict)[A-Za-z]*Exception\('[A-Z][a-z]+ [a-z]" \
+               backend/src --include='*.ts' | grep -v '\.spec\.ts'; then
+            echo "::error::Found a hardcoded English message. Use an i18n key (e.g. 'auth.invalid_credentials')."
+            exit 1
+          fi
+
+  # ==========================================================================
+  # Step 2 — Unit tests
+  # ==========================================================================
+  unit-tests:
+    name: Step 2 · Unit tests
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+
+      - name: Domain tests (money, rating, state machines)
+        run: npm run test:cov --workspace @lih/domain
+
+      - name: Backend unit tests
+        run: cd backend && npx jest --coverage
+        env:
+          NODE_ENV: test
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-unit
+          path: |
+            packages/domain/coverage/
+            backend/coverage/
+          retention-days: 14
+
+  # ==========================================================================
+  # Step 3 — Integration tests (real Postgres and Redis)
+  # ==========================================================================
+  integration-tests:
+    name: Step 3 · Integration tests
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: lih
+          POSTGRES_PASSWORD: lih_ci_password
+          POSTGRES_DB: lih_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U lih -d lih_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://lih:lih_ci_password@localhost:5432/lih_test?schema=public
+      REDIS_URL: redis://localhost:6379
+      JWT_ACCESS_SECRET: ci-access-secret-that-is-long-enough-32
+      JWT_REFRESH_SECRET: ci-refresh-secret-that-is-long-enough-32
+      PII_ENCRYPTION_KEY: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
+      NODE_ENV: test
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+
+      - name: Generate Prisma client
+        run: cd backend && npx prisma generate
+
+      # The SQL phases must run in this order — the uuidv7 function and the
+      # extensions have to exist before the tables that default to them, and
+      # the RLS policies after the tables exist. This is also the only place
+      # in CI where that ordering is actually exercised.
+      - name: Apply pre-migration SQL
+        run: cd backend && node scripts/apply-sql.js pre
+
+      - name: Run migrations
+        run: cd backend && npx prisma migrate deploy
+
+      - name: Apply post-migration SQL (RLS, partitions, indexes)
+        run: cd backend && node scripts/apply-sql.js post
+
+      - name: Seed
+        run: cd backend && npx ts-node prisma/seed.ts
+
+      - name: Verify row-level security is actually enforced
+        # A regression here means one tenant could read another's rows. The
+        # policy existing is not the same as it being enabled and forced.
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "
+            SELECT tablename FROM pg_tables
+            WHERE schemaname='public'
+              AND tablename IN ('policies','claims','payments','lawyer_profiles')
+              AND NOT rowsecurity;
+          " -t | grep -q '[^[:space:]]' && {
+            echo '::error::Row-level security is not enabled on a business table'; exit 1;
+          } || echo 'RLS enabled on all checked tables'
+
+      - name: Verify the audit log rejects UPDATE
+        run: |
+          psql "$DATABASE_URL" -c \
+            "UPDATE audit_logs SET action='tampered' WHERE true;" 2>&1 \
+            | grep -q 'append-only' \
+            && echo 'audit_logs is append-only' \
+            || { echo '::error::audit_logs accepted an UPDATE'; exit 1; }
+
+      - name: Integration tests
+        run: cd backend && npx jest --config test/jest-e2e.json --runInBand --passWithNoTests
+
+  # ==========================================================================
+  # Step 4 — Build frontend
+  # ==========================================================================
+  build-web:
+    name: Step 4 · Build web
+    runs-on: ubuntu-latest
+    needs: [changes, lint]
+    if: needs.changes.outputs.web == 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - run: npm run build --workspace @lih/domain
+      - name: Build Next.js
+        run: cd frontend-web && npm run build
+        env:
+          NEXT_PUBLIC_API_URL: https://api.lih.cm/v1
+          NEXT_TELEMETRY_DISABLED: '1'
+
+  # ==========================================================================
+  # Step 5 — Build backend
+  # ==========================================================================
+  build-backend:
+    name: Step 5 · Build backend
+    runs-on: ubuntu-latest
+    needs: [changes, lint, unit-tests]
+    if: needs.changes.outputs.backend == 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci
+      - name: Generate Prisma client
+        run: cd backend && npx prisma generate
+      # Build order matters: the API resolves @lih/domain through the
+      # workspace symlink to the package's dist, not its source.
+      - name: Build domain, then API
+        run: |
+          npm run build --workspace @lih/domain
+          cd backend && npx nest build
+      - name: Assert the emit landed where the Dockerfile expects it
+        run: test -f backend/dist/main.js || { echo '::error::backend/dist/main.js missing'; exit 1; }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: backend-dist
+          path: backend/dist/
+          retention-days: 7
+
+  # ==========================================================================
+  # Step 6 — Build mobile
+  # ==========================================================================
+  build-mobile:
+    name: Step 6 · Build mobile
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.mobile == 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+      - name: Resolve dependencies
+        run: cd mobile-app && flutter pub get
+      - name: Analyse
+        run: cd mobile-app && flutter analyze --no-fatal-infos
+      - name: Test
+        run: cd mobile-app && flutter test
+      - name: Build debug APK (validation only — signed builds live in the release workflow)
+        run: cd mobile-app && flutter build apk --debug
+
+  # ==========================================================================
+  ci-passed:
+    name: CI passed
+    runs-on: ubuntu-latest
+    if: always()
+    needs: [lint, unit-tests, integration-tests, build-web, build-backend, build-mobile]
+    steps:
+      # Skipped jobs are expected (path filters); failures and cancellations
+      # are not. This is the single required check for branch protection.
+      - name: Verify no job failed
+        run: |
+          echo '${{ toJSON(needs) }}' > results.json
+          if grep -qE '"result": *"(failure|cancelled)"' results.json; then
+            echo "::error::At least one CI job failed"
+            cat results.json
+            exit 1
+          fi
+          echo "All executed jobs passed."

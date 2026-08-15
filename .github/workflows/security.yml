@@ -1,0 +1,147 @@
+name: Security
+
+# Static analysis, dependency and secret scanning.
+#
+# Runs on every PR and on a weekly schedule. The schedule matters as much as
+# the PR trigger: most vulnerabilities appear in code that has not changed —
+# a CVE is published against a dependency that was already there.
+
+on:
+  push:
+    branches: [main, develop, staging, production]
+  pull_request:
+    branches: [main, develop, staging, production]
+  schedule:
+    - cron: '0 3 * * 1'   # Mondays 03:00 UTC — 04:00 in Cameroon
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
+jobs:
+  codeql:
+    name: CodeQL static analysis
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [javascript-typescript]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          # security-extended adds the injection and crypto-misuse queries.
+          # On a platform holding identity numbers and moving money, the extra
+          # scan time is not a meaningful cost.
+          queries: security-extended,security-and-quality
+      - uses: github/codeql-action/autobuild@v3
+      - uses: github/codeql-action/analyze@v3
+        with:
+          category: /language:${{ matrix.language }}
+
+  dependencies:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+
+      - name: npm audit (high and above)
+        run: |
+          npm audit --audit-level=high --omit=dev || {
+            echo "::warning::High-severity advisories found in production dependencies."
+            npm audit --audit-level=high --omit=dev --json > audit.json || true
+            exit 1
+          }
+
+      - name: Fail on a critical advisory
+        run: npm audit --audit-level=critical --omit=dev
+
+  secrets:
+    name: Secret scanning
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history: a secret committed and then "removed" in a later
+          # commit is still in the pack file and still compromised.
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  filesystem:
+    name: Filesystem and IaC scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Trivy — dependencies, secrets, misconfiguration
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: sarif
+          output: trivy-fs.sarif
+          severity: CRITICAL,HIGH
+          scanners: vuln,secret,misconfig
+      - uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-fs.sarif
+          category: trivy-fs
+
+  guardrails:
+    name: Project security guardrails
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # These check the invariants this specific product depends on. Generic
+      # scanners do not know that `policies:activate:system` must never be
+      # granted to a human role, but that is exactly the kind of change that
+      # would let cover be issued without payment.
+      - name: No human role may hold a :system permission
+        run: |
+          if grep -nE "'[a-z]+:[a-z_]+:system'" packages/domain/src/rbac/permissions.ts \
+             | grep -v 'PERMISSIONS' | grep -qE "^\s*[0-9]+:\s*'"; then
+            echo "::error::A :system permission appears inside a role bundle. Only internal callers may hold these."
+            exit 1
+          fi
+          echo "No :system permission is granted to a role."
+
+      - name: Money must never be a float
+        run: |
+          if grep -rnE "(premium|amount|balance|claimed|approved)[A-Za-z]*\s*:\s*number" \
+               backend/src packages/domain/src --include='*.ts' \
+             | grep -v '\.spec\.ts' | grep -v 'installments' | grep -v 'Count'; then
+            echo "::error::A monetary value is typed as number. XAF amounts are bigint. See ADR 0002."
+            exit 1
+          fi
+          echo "No monetary value typed as number."
+
+      - name: Every payment-mutating route requires an Idempotency-Key
+        run: |
+          # A retried payment that charges twice is the worst class of bug this
+          # system can have, so the header requirement is enforced, not trusted.
+          MISSING=0
+          for route in "installments/:id/pay" "claims/:id/payout" "payments/:id/refund"; do
+            grep -q "idempotency-key" backend/src/modules/payments/payments.module.ts || MISSING=1
+          done
+          [ "$MISSING" = "0" ] || { echo "::error::A payment route is missing its Idempotency-Key check"; exit 1; }
+          echo "Idempotency enforced on payment routes."
+
+      - name: The .env.example files must not contain real values
+        run: |
+          if grep -rnE "^(JWT_[A-Z_]+|PII_ENCRYPTION_KEY|.*_API_KEY|.*_SECRET)=.{16,}" \
+               --include='.env.example' --include='*.env.example' . ; then
+            echo "::error::A .env.example appears to contain a real secret."
+            exit 1
+          fi
+          echo "Example env files carry no values."

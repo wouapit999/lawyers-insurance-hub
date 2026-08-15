@@ -1,0 +1,121 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: lih-api
+  namespace: lih-production
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    cert-manager.io/cluster-issuer: letsencrypt-production
+
+    # --- TLS ---------------------------------------------------------------
+    nginx.ingress.kubernetes.io/ssl-redirect: 'true'
+    nginx.ingress.kubernetes.io/force-ssl-redirect: 'true'
+    nginx.ingress.kubernetes.io/ssl-protocols: 'TLSv1.3 TLSv1.2'
+    nginx.ingress.kubernetes.io/ssl-ciphers: 'ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305'
+
+    # --- Rate limiting -----------------------------------------------------
+    # A second layer behind the application's own throttler. This one is
+    # enforced before a request reaches Node, so a flood costs us nginx
+    # capacity rather than event-loop time and database connections.
+    nginx.ingress.kubernetes.io/limit-rps: '20'
+    nginx.ingress.kubernetes.io/limit-burst-multiplier: '3'
+    nginx.ingress.kubernetes.io/limit-connections: '20'
+    # Cloudflare fronts this, so the client IP arrives in a header; without
+    # this every request would appear to come from Cloudflare and rate limits
+    # would apply to the whole internet as one client.
+    nginx.ingress.kubernetes.io/use-forwarded-headers: 'true'
+    nginx.ingress.kubernetes.io/compute-full-forwarded-for: 'true'
+
+    # --- Body size ---------------------------------------------------------
+    # Claim evidence includes phone video. 25 MB per upload with a 10-minute
+    # read timeout accommodates a slow Cameroonian mobile connection.
+    nginx.ingress.kubernetes.io/proxy-body-size: 25m
+    nginx.ingress.kubernetes.io/proxy-read-timeout: '600'
+    nginx.ingress.kubernetes.io/proxy-send-timeout: '600'
+
+    # --- Security headers --------------------------------------------------
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      more_set_headers "Strict-Transport-Security: max-age=63072000; includeSubDomains; preload";
+      more_set_headers "X-Content-Type-Options: nosniff";
+      more_set_headers "X-Frame-Options: DENY";
+      more_set_headers "Referrer-Policy: strict-origin-when-cross-origin";
+      more_clear_headers "Server";
+      more_clear_headers "X-Powered-By";
+
+    # --- ModSecurity WAF ---------------------------------------------------
+    nginx.ingress.kubernetes.io/enable-modsecurity: 'true'
+    nginx.ingress.kubernetes.io/enable-owasp-core-rules: 'true'
+    nginx.ingress.kubernetes.io/modsecurity-snippet: |
+      SecRuleEngine On
+      SecRequestBodyAccess On
+      SecAuditEngine RelevantOnly
+      SecAuditLogParts ABIJDEFHZ
+
+      # Payment callbacks carry provider-specific payloads that the OWASP CRS
+      # regularly scores as anomalies. They are already HMAC-verified and then
+      # confirmed against the provider, so CRS is relaxed here rather than
+      # having providers' legitimate callbacks silently dropped.
+      SecRule REQUEST_URI "@beginsWith /v1/payments/webhooks" \
+        "id:1001,phase:1,pass,nolog,ctl:ruleRemoveById=942100-942999"
+
+      # Uploads are scanned by Defender for Storage after arrival; CRS body
+      # inspection on a 25 MB video is pure latency.
+      SecRule REQUEST_URI "@contains /evidence" \
+        "id:1002,phase:1,pass,nolog,ctl:requestBodyAccess=Off"
+
+    # --- CORS --------------------------------------------------------------
+    nginx.ingress.kubernetes.io/enable-cors: 'true'
+    nginx.ingress.kubernetes.io/cors-allow-origin: 'https://app.lih.cm,https://admin.lih.cm'
+    nginx.ingress.kubernetes.io/cors-allow-methods: 'GET, POST, PATCH, DELETE, OPTIONS'
+    nginx.ingress.kubernetes.io/cors-allow-headers: 'Authorization, Content-Type, Accept-Language, Idempotency-Key, X-Request-Id'
+    nginx.ingress.kubernetes.io/cors-allow-credentials: 'true'
+
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: [api.lih.cm]
+      secretName: lih-api-tls
+  rules:
+    - host: api.lih.cm
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: lih-api
+                port:
+                  number: 80
+
+---
+# Provider callbacks come from fixed networks and must not be rate limited
+# alongside ordinary traffic — a dropped settlement callback means a lawyer
+# paid and has no cover until reconciliation catches it the next morning.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: lih-api-webhooks
+  namespace: lih-production
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    cert-manager.io/cluster-issuer: letsencrypt-production
+    nginx.ingress.kubernetes.io/force-ssl-redirect: 'true'
+    nginx.ingress.kubernetes.io/limit-rps: '100'
+    nginx.ingress.kubernetes.io/enable-modsecurity: 'true'
+    nginx.ingress.kubernetes.io/enable-owasp-core-rules: 'false'
+spec:
+  ingressClassName: nginx
+  tls:
+    - hosts: [api.lih.cm]
+      secretName: lih-api-tls
+  rules:
+    - host: api.lih.cm
+      http:
+        paths:
+          - path: /v1/payments/webhooks
+            pathType: Prefix
+            backend:
+              service:
+                name: lih-api
+                port:
+                  number: 80

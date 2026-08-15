@@ -1,0 +1,65 @@
+name: lih_mobile
+description: Lawyers Insurance Hub — mobile application for members of the Cameroon Bar Association.
+publish_to: "none"
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.5.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+
+  # State management. Riverpod over Provider/Bloc here because the offline
+  # sync layer needs to invalidate derived state from outside the widget tree
+  # when a queued claim finally uploads.
+  flutter_riverpod: ^2.6.1
+
+  # Networking
+  dio: ^5.7.0
+
+  # Secure storage — the refresh token goes in the platform keystore
+  # (Keychain / Android Keystore), never in shared preferences.
+  flutter_secure_storage: ^9.2.2
+  local_auth: ^2.3.0
+
+  # Offline: policy wallet, certificates and draft claims must work with no
+  # signal, which is a hard requirement outside Douala and Yaoundé.
+  drift: ^2.21.0
+  sqlite3_flutter_libs: ^0.5.26
+  path_provider: ^2.1.5
+  connectivity_plus: ^6.1.0
+
+  # Camera-first claim evidence
+  image_picker: ^1.1.2
+  geolocator: ^13.0.2
+
+  # Notifications
+  firebase_core: ^3.8.1
+  firebase_messaging: ^15.1.6
+
+  intl: ^0.19.0
+  qr_flutter: ^4.1.0
+  cupertino_icons: ^1.0.8
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+  drift_dev: ^2.21.0
+  build_runner: ^2.4.13
+  mocktail: ^1.0.4
+
+flutter:
+  uses-material-design: true
+  generate: true
+  assets:
+    - assets/images/
+  fonts:
+    - family: Lora
+      fonts:
+        - asset: assets/fonts/Lora-Regular.ttf
+        - asset: assets/fonts/Lora-Bold.ttf
+          weight: 700

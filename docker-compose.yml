@@ -1,0 +1,78 @@
+# Local development stack. Production runs on AKS via the Helm charts in infra/.
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: lih-postgres
+    environment:
+      POSTGRES_USER: lih
+      POSTGRES_PASSWORD: lih_dev_password
+      POSTGRES_DB: lih
+    ports:
+      - "5432:5432"
+    volumes:
+      - lih-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lih -d lih"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: lih-redis
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - lih-redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: lih-rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: lih
+      RABBITMQ_DEFAULT_PASS: lih_dev_password
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: lih-api
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: postgresql://lih:lih_dev_password@postgres:5432/lih?schema=public
+      REDIS_URL: redis://redis:6379
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:-dev-access-secret-change-me-32-chars-min}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:-dev-refresh-secret-change-me-32-chars}
+      PII_ENCRYPTION_KEY: ${PII_ENCRYPTION_KEY:-}
+      DEFAULT_LOCALE: fr
+    ports:
+      - "3000:3000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/v1/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  lih-pgdata:
+  lih-redisdata:

@@ -1,0 +1,74 @@
+{
+  "validation_failed": "One or more fields are invalid",
+  "http": {
+    "400": "Bad request",
+    "401": "Authentication required",
+    "403": "Access denied",
+    "404": "Not found",
+    "409": "Conflict",
+    "422": "Unprocessable content",
+    "429": "Too many requests",
+    "500": "Internal server error"
+  },
+  "internal": {
+    "title": "Internal server error",
+    "detail": "Something went wrong on our side. Quote the reference below to support."
+  },
+  "not_found": {
+    "title": "Not found",
+    "detail": "The requested record does not exist"
+  },
+  "conflict": {
+    "title": "Already exists",
+    "duplicate": "A record with this {field} already exists"
+  },
+  "invalid_reference": {
+    "title": "Invalid reference",
+    "detail": "A referenced record does not exist"
+  },
+  "illegal_transition": {
+    "title": "Action not allowed in this state",
+    "detail": "Cannot {transition} a {entity} in status \"{from}\""
+  },
+  "auth": {
+    "invalid_credentials": "Incorrect email address or password",
+    "account_locked": "Account temporarily locked after repeated failed attempts. Try again in {minutes} minutes.",
+    "account_suspended": "This account is suspended. Please contact support.",
+    "email_not_verified": "Please verify your email address before continuing",
+    "phone_not_verified": "Please verify your phone number before continuing",
+    "otp_invalid": "Incorrect verification code",
+    "otp_expired": "This verification code has expired. Request a new one.",
+    "otp_too_many_attempts": "Too many attempts. Request a new code.",
+    "refresh_token_invalid": "Session expired. Please sign in again.",
+    "refresh_token_reused": "Session revoked for security reasons. Please sign in again.",
+    "mfa_required": "Two-factor authentication required",
+    "mfa_invalid": "Incorrect authentication code"
+  },
+  "onboarding": {
+    "bar_number_taken": "This Bar registration number is already registered",
+    "verification_pending": "Your registration is awaiting verification by the Bar Association",
+    "verification_rejected": "Your registration was rejected by the Bar Association: {reason}",
+    "not_verified": "You must be verified by the Cameroon Bar Association to subscribe to a policy"
+  },
+  "policy": {
+    "quote_expired": "This quotation has expired. Request a new one.",
+    "quote_already_converted": "This quotation has already been converted into a policy",
+    "not_active": "This policy is not active",
+    "plan_unavailable": "This plan is no longer available",
+    "no_rating_table": "No pricing is currently in force for this plan"
+  },
+  "claims": {
+    "policy_not_active": "You can only file a claim against an active policy",
+    "incident_before_cover": "The incident date is before the policy took effect",
+    "incident_in_future": "The incident date cannot be in the future",
+    "already_closed": "This claim is closed"
+  },
+  "payments": {
+    "installment_already_paid": "This installment is already settled",
+    "provider_unavailable": "{provider} is temporarily unavailable. Try again or choose another payment method.",
+    "invalid_msisdn": "Invalid phone number for {provider}",
+    "amount_mismatch": "The amount received does not match the amount expected",
+    "webhook_signature_invalid": "Invalid callback signature",
+    "refund_exceeds_payment": "The refund exceeds the amount paid"
+  }
+}

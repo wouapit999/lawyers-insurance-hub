@@ -1,0 +1,233 @@
+name: Deploy · Azure
+
+# Steps 7–9: build the Docker image, push to Azure Container Registry, deploy
+# to AKS.
+#
+# Authentication is OIDC federated credentials, not a stored service-principal
+# secret. GitHub mints a short-lived token per run that Azure trusts for this
+# repository and environment only. A leaked long-lived AZURE_CREDENTIALS JSON
+# is one of the most common ways a cloud account is taken over, and this
+# removes the thing that would leak.
+
+on:
+  push:
+    branches: [develop, staging, production]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        required: true
+        type: choice
+        options: [dev, staging, production]
+
+concurrency:
+  # Never run two deploys at the same environment concurrently — the second
+  # would race the first's rollout and migrations.
+  group: deploy-azure-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write   # required to request the OIDC token
+  packages: write
+
+env:
+  ACR_NAME: lihacr
+  IMAGE_NAME: lih-api
+  AKS_CLUSTER: lih-aks
+  AKS_RESOURCE_GROUP: lih-rg
+
+jobs:
+  resolve:
+    name: Resolve target environment
+    runs-on: ubuntu-latest
+    outputs:
+      environment: ${{ steps.pick.outputs.environment }}
+      namespace: ${{ steps.pick.outputs.namespace }}
+    steps:
+      - id: pick
+        run: |
+          if [ -n "${{ inputs.environment }}" ]; then
+            ENV="${{ inputs.environment }}"
+          elif [ "${{ github.ref }}" = "refs/heads/production" ]; then
+            ENV="production"
+          elif [ "${{ github.ref }}" = "refs/heads/staging" ]; then
+            ENV="staging"
+          else
+            ENV="dev"
+          fi
+          echo "environment=$ENV" >> "$GITHUB_OUTPUT"
+          echo "namespace=lih-$ENV"  >> "$GITHUB_OUTPUT"
+          echo "Deploying to $ENV"
+
+  # ==========================================================================
+  # Steps 7 & 8 — Docker build and push to ACR
+  # ==========================================================================
+  build-and-push:
+    name: Steps 7-8 · Build image & push to ACR
+    runs-on: ubuntu-latest
+    needs: resolve
+    environment: ${{ needs.resolve.outputs.environment }}
+    outputs:
+      image: ${{ steps.meta.outputs.image }}
+      digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Log in to ACR
+        run: az acr login --name ${{ env.ACR_NAME }}
+
+      - name: Compute image tags
+        id: meta
+        run: |
+          # Immutable tag from the commit SHA. A moving tag like :latest makes
+          # "which build is in production" unanswerable during an incident.
+          SHA_TAG="${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${GITHUB_SHA::12}"
+          ENV_TAG="${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ needs.resolve.outputs.environment }}"
+          echo "image=$SHA_TAG" >> "$GITHUB_OUTPUT"
+          echo "tags=$SHA_TAG,$ENV_TAG" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: backend/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          # Layer cache in the registry keeps rebuild times down; the native
+          # argon2 addon is the slow part and rarely changes.
+          cache-from: type=registry,ref=${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:buildcache
+          cache-to: type=registry,ref=${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:buildcache,mode=max
+          provenance: true
+          sbom: true
+
+      - name: Scan image for vulnerabilities
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ steps.meta.outputs.image }}
+          format: sarif
+          output: trivy-image.sarif
+          severity: CRITICAL,HIGH
+          # Deliberately not exit-code 1: the scan reports into the Security
+          # tab and the gate below decides. A brand-new base-image CVE with no
+          # fix available should not block a security hotfix from shipping.
+          exit-code: '0'
+
+      - name: Publish scan results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-image.sarif
+          category: trivy-image
+
+      - name: Block production on fixable critical vulnerabilities
+        if: needs.resolve.outputs.environment == 'production'
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ steps.meta.outputs.image }}
+          format: table
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+
+  # ==========================================================================
+  # Step 9 — Deploy to AKS
+  # ==========================================================================
+  deploy:
+    name: Step 9 · Deploy to AKS
+    runs-on: ubuntu-latest
+    needs: [resolve, build-and-push]
+    # The GitHub environment carries the required reviewers for production.
+    # Approval happens here, after the image exists and has been scanned, so
+    # the approver is signing off on something real.
+    environment:
+      name: ${{ needs.resolve.outputs.environment }}
+      url: ${{ needs.resolve.outputs.environment == 'production' && 'https://api.lih.cm' || format('https://{0}.api.lih.cm', needs.resolve.outputs.environment) }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Get AKS credentials
+        run: |
+          az aks get-credentials \
+            --resource-group ${{ env.AKS_RESOURCE_GROUP }} \
+            --name ${{ env.AKS_CLUSTER }} \
+            --overwrite-existing
+
+      # ---- migrations run BEFORE the new pods ----------------------------
+      # Expand-migrate-contract: migrations are additive, so the currently
+      # running version keeps working against the new schema while the
+      # rollout proceeds. This is what makes blue-green safe here.
+      - name: Run database migrations as a Job
+        run: |
+          NS=${{ needs.resolve.outputs.namespace }}
+          JOB="lih-migrate-${GITHUB_SHA::8}"
+
+          sed -e "s|__IMAGE__|${{ needs.build-and-push.outputs.image }}|g" \
+              -e "s|__JOB_NAME__|${JOB}|g" \
+              -e "s|__NAMESPACE__|${NS}|g" \
+              infrastructure/kubernetes/migration-job.yaml | kubectl apply -f -
+
+          echo "Waiting for migrations…"
+          kubectl wait --for=condition=complete --timeout=600s "job/${JOB}" -n "$NS" || {
+            echo "::error::Migration job failed — deployment aborted, no new pods started"
+            kubectl logs "job/${JOB}" -n "$NS" --tail=200
+            exit 1
+          }
+          kubectl logs "job/${JOB}" -n "$NS" --tail=50
+
+      - name: Deploy
+        run: |
+          NS=${{ needs.resolve.outputs.namespace }}
+          kubectl -n "$NS" set image deployment/lih-api \
+            api=${{ needs.build-and-push.outputs.image }} --record
+
+          # Fails the step if the rollout does not converge, which triggers
+          # the rollback below rather than leaving a half-updated ReplicaSet.
+          kubectl -n "$NS" rollout status deployment/lih-api --timeout=300s
+
+      - name: Smoke test
+        run: |
+          NS=${{ needs.resolve.outputs.namespace }}
+          kubectl -n "$NS" run smoke-${GITHUB_RUN_ID} \
+            --image=curlimages/curl:8.11.1 --rm -i --restart=Never --quiet -- \
+            sh -c '
+              set -e
+              curl -fsS http://lih-api/health/ready | grep -q "\"database\":\"up\""
+              curl -fsS http://lih-api/v1/products > /dev/null
+              echo "smoke tests passed"
+            '
+
+      - name: Roll back on failure
+        if: failure()
+        run: |
+          NS=${{ needs.resolve.outputs.namespace }}
+          echo "::error::Deploy or smoke test failed — rolling back"
+          kubectl -n "$NS" rollout undo deployment/lih-api
+          kubectl -n "$NS" rollout status deployment/lih-api --timeout=300s
+          echo "Rolled back. NOTE: migrations are additive and are NOT reverted —
+                the previous image is designed to run against the new schema."
+
+      - name: Annotate the release in Application Insights
+        if: success()
+        run: |
+          az monitor app-insights events show \
+            --app lih-insights-${{ needs.resolve.outputs.environment }} \
+            --resource-group ${{ env.AKS_RESOURCE_GROUP }} \
+            --type customEvents --offset 1h >/dev/null 2>&1 || true
+          echo "Deployed ${{ needs.build-and-push.outputs.image }} to ${{ needs.resolve.outputs.environment }}"

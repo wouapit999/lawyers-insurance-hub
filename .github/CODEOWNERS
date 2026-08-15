@@ -1,0 +1,16 @@
+# Default owner for everything.
+*                               @wouapit999
+
+# Money, permissions and state machines decide whether cover exists and
+# whether a member is charged correctly. They do not change without the
+# owner's review.
+/packages/domain/               @wouapit999
+/backend/src/modules/payments/  @wouapit999
+/backend/src/modules/auth/      @wouapit999
+/backend/src/common/security/   @wouapit999
+/backend/prisma/                @wouapit999
+
+# Anything that can expose the estate or leak a secret.
+/infrastructure/                @wouapit999
+/.github/workflows/             @wouapit999
+SECURITY.md                     @wouapit999

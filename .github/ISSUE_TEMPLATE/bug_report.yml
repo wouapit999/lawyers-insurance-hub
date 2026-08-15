@@ -1,0 +1,95 @@
+name: Bug report — Rapport de bogue
+description: Something is not working as expected
+title: "[Bug]: "
+labels: [bug, triage]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Do not report a security vulnerability here.** Use the Security tab
+        or security@bouquet-innovation.net — see [SECURITY.md](../blob/main/SECURITY.md).
+
+        **Ne signalez pas une faille de sécurité ici.**
+
+        **Never paste real member data** — names, Bar numbers, identity
+        numbers, phone numbers or payment references. Use the demo accounts.
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Authentication / sign-in
+        - Registration / Bar verification
+        - Products / quotations
+        - Policies / certificates
+        - Claims
+        - Payments (Orange Money)
+        - Payments (MTN MoMo)
+        - Payments (card / bank)
+        - Family / vehicles
+        - Back office
+        - Mobile app
+        - Other
+    validations: { required: true }
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      options:
+        - Critical — money is wrong, or cover is wrong
+        - High — a member cannot complete a core task
+        - Medium — a workaround exists
+        - Low — cosmetic
+    validations: { required: true }
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What did you expect, and what happened instead?
+    validations: { required: true }
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Sign in as avocat@demo.lih.cm
+        2. Go to Products → Professional Liability
+        3. Request a quote with 4 installments
+        4. The total does not match the premium
+    validations: { required: true }
+
+  - type: input
+    id: request-id
+    attributes:
+      label: Request ID
+      description: >
+        If an error appeared on screen it included a reference. Paste it —
+        it locates the exact request in the server logs.
+      placeholder: 7f3a2b1c-...
+
+  - type: dropdown
+    id: locale
+    attributes:
+      label: Language in use
+      options: [Français, English, Both / switching between them]
+    validations: { required: true }
+
+  - type: dropdown
+    id: environment
+    attributes:
+      label: Environment
+      options: [Production, Staging, Development, Local]
+    validations: { required: true }
+
+  - type: textarea
+    id: platform
+    attributes:
+      label: Platform
+      placeholder: |
+        Web — Chrome 131, Windows 11
+        Mobile — Android 14, Tecno Spark 10, app 1.0.3
+        Network — MTN mobile data, Douala
