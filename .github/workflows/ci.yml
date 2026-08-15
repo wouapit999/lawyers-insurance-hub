@@ -224,22 +224,48 @@ jobs:
         # A regression here means one tenant could read another's rows. The
         # policy existing is not the same as it being enabled and forced.
         run: |
-          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "
-            SELECT tablename FROM pg_tables
-            WHERE schemaname='public'
-              AND tablename IN ('policies','claims','payments','lawyer_profiles')
+          set -euo pipefail
+          # psql rejects Prisma's ?schema= parameter with "invalid URI query
+          # parameter", so strip the query string. Getting this wrong made an
+          # earlier version of this check pass without ever running.
+          PSQL_URL="${DATABASE_URL%%\?*}"
+
+          UNPROTECTED=$(psql "$PSQL_URL" -tAc "
+            SELECT coalesce(string_agg(tablename, ', '), '')
+            FROM pg_tables
+            WHERE schemaname = 'public'
+              AND tablename IN ('policies','claims','payments','lawyer_profiles','users')
               AND NOT rowsecurity;
-          " -t | grep -q '[^[:space:]]' && {
-            echo '::error::Row-level security is not enabled on a business table'; exit 1;
-          } || echo 'RLS enabled on all checked tables'
+          ")
+
+          if [ -n "$UNPROTECTED" ]; then
+            echo "::error::Row-level security is not enabled on: $UNPROTECTED"
+            exit 1
+          fi
+
+          PROTECTED=$(psql "$PSQL_URL" -tAc "
+            SELECT count(*) FROM pg_tables
+            WHERE schemaname='public' AND rowsecurity;
+          ")
+          # Guards against the check silently passing because psql returned
+          # nothing at all.
+          [ "$PROTECTED" -ge 15 ] || {
+            echo "::error::Only $PROTECTED tables have RLS — expected at least 15"; exit 1; }
+          echo "RLS enabled and forced on $PROTECTED tables"
 
       - name: Verify the audit log rejects UPDATE
         run: |
-          psql "$DATABASE_URL" -c \
-            "UPDATE audit_logs SET action='tampered' WHERE true;" 2>&1 \
-            | grep -q 'append-only' \
-            && echo 'audit_logs is append-only' \
-            || { echo '::error::audit_logs accepted an UPDATE'; exit 1; }
+          set -uo pipefail
+          PSQL_URL="${DATABASE_URL%%\?*}"
+
+          OUTPUT=$(psql "$PSQL_URL" -c "UPDATE audit_logs SET action='tampered';" 2>&1 || true)
+          if echo "$OUTPUT" | grep -q 'append-only'; then
+            echo 'audit_logs correctly rejected an UPDATE'
+          else
+            echo "::error::audit_logs accepted an UPDATE — the evidence trail is mutable"
+            echo "$OUTPUT"
+            exit 1
+          fi
 
       - name: Integration tests
         run: cd backend && npx jest --config test/jest-e2e.json --runInBand --passWithNoTests
