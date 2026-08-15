@@ -302,12 +302,6 @@ jobs:
     needs: [changes, lint]
     if: needs.changes.outputs.web == 'true'
 
-    # NON-BLOCKING while the Next.js app is still a scaffold. frontend-web/
-    # currently holds the API client, the money handling and both message
-    # catalogues, but no app/ or pages/ directory, so `next build` correctly
-    # refuses. Remove this line once the first route exists.
-    continue-on-error: true
-
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

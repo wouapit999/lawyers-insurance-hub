@@ -1,0 +1,35 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Navy / gold / white — the identity from the blueprint and the investor deck.
+   Kept as CSS variables so the eventual ShadCN component layer can consume the
+   same tokens rather than inventing a second palette. */
+:root {
+  --paper: #fcfbf7;
+  --ink: #1c2333;
+  --ink-soft: #4a5265;
+  --navy: #14294b;
+  --gold: #c9a24b;
+  --line: #e4e0d3;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background: var(--paper);
+  color: var(--ink);
+}
+
+/* French runs ~20% longer than English; balanced headings stop a two-word
+   orphan on the French variant of every title. */
+h1, h2, h3 {
+  text-wrap: balance;
+}
+
+:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}

@@ -14,7 +14,7 @@ on:
     paths:
       - 'frontend-web/**'
       - 'packages/**'
-      - 'vercel.json'
+      - 'frontend-web/vercel.json'
       - '.github/workflows/deploy-vercel.yml'
   pull_request:
     branches: [main, develop, staging]
