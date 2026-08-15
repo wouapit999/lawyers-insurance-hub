@@ -80,6 +80,18 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
       - run: npm ci
+
+      # Both are prerequisites for the backend to typecheck at all:
+      #   * @lih/domain resolves through the workspace symlink to its dist,
+      #     which does not exist until the package is built.
+      #   * Prisma's generated client supplies every model and enum type.
+      # Without them tsc reports dozens of phantom errors that do not exist
+      # on a developer machine where both have already been run.
+      - name: Generate Prisma client
+        run: cd backend && npx prisma generate
+      - name: Build domain package
+        run: npm run build --workspace @lih/domain
+
       - name: Typecheck domain package
         run: npm run typecheck --workspace @lih/domain
       - name: Typecheck backend
@@ -110,6 +122,14 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
       - run: npm ci
+
+      # ts-jest type-checks as it transpiles, so the backend suite needs the
+      # generated Prisma client and the built domain package exactly as the
+      # typecheck job does.
+      - name: Generate Prisma client
+        run: cd backend && npx prisma generate
+      - name: Build domain package
+        run: npm run build --workspace @lih/domain
 
       - name: Domain tests (money, rating, state machines)
         run: npm run test:cov --workspace @lih/domain
@@ -174,6 +194,8 @@ jobs:
 
       - name: Generate Prisma client
         run: cd backend && npx prisma generate
+      - name: Build domain package
+        run: npm run build --workspace @lih/domain
 
       # The SQL phases must run in this order — the uuidv7 function and the
       # extensions have to exist before the tables that default to them, and
