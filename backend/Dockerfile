@@ -9,7 +9,7 @@
 # ---------------------------------------------------------------------------
 
 # --- deps ------------------------------------------------------------------
-FROM node:22-alpine AS deps
+FROM node:26-alpine AS deps
 WORKDIR /app
 
 # Argon2 compiles a native addon, so the build stage needs a toolchain. It is
@@ -22,7 +22,7 @@ COPY backend/package.json ./backend/
 RUN npm ci --workspaces --include-workspace-root
 
 # --- build -----------------------------------------------------------------
-FROM node:22-alpine AS build
+FROM node:26-alpine AS build
 WORKDIR /app
 RUN apk add --no-cache libc6-compat openssl
 
@@ -38,7 +38,7 @@ RUN npm run build --workspace @lih/domain \
 RUN npm prune --omit=dev --workspaces --include-workspace-root
 
 # --- runtime ---------------------------------------------------------------
-FROM node:22-alpine AS runtime
+FROM node:26-alpine AS runtime
 WORKDIR /app
 
 # OpenSSL is required by the Prisma query engine; dumb-init gives us correct
