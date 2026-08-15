@@ -9,18 +9,56 @@ PostgreSQL to provision.
 
 ## Prerequisites
 
+### Installing the Azure CLI
+
+The MSI installs machine-wide, so it **requires an elevated terminal**. From
+an Administrator PowerShell:
+
+```powershell
+winget install --id Microsoft.AzureCLI --silent --accept-package-agreements --accept-source-agreements
+```
+
+Run from a non-elevated shell it hangs indefinitely waiting for a UAC prompt
+that never appears — it does not fail, it just never finishes.
+
+Then open a **new** terminal so the updated PATH is picked up:
+
 ```bash
 az --version && kubectl version --client && helm version
 ```
 
-Log in and select the subscription:
+### Logging in
 
 ```bash
-az login && az account set --subscription "<subscription-id>"
+az login
 ```
 
-You need **Contributor** plus **User Access Administrator** — the script
-creates role assignments, which Contributor alone cannot do.
+This opens a browser and cannot be automated — it is an interactive consent
+flow by design. Then select the subscription:
+
+```bash
+az account set --subscription "<subscription-id>"
+```
+
+You need **Contributor** plus **User Access Administrator** on the
+subscription. The provisioning script creates role assignments, which
+Contributor alone cannot do.
+
+### Configuring OIDC for the pipeline
+
+Once logged in, run this **once per subscription**. It registers the
+application, its service principal, the role assignments and the federated
+credentials, and writes the three ids into GitHub secrets:
+
+```bash
+./infrastructure/azure/setup-oidc.sh
+```
+
+It is idempotent, and it creates no secret of any kind — GitHub mints a
+short-lived token per run instead.
+
+If the resource groups do not exist yet, run `provision.sh` first; the OIDC
+script skips role assignment for missing groups and tells you to re-run it.
 
 ## 1. Provision the estate
 
