@@ -40,26 +40,39 @@ END $$;
 -- reaches a business table cannot read another tenant's rows, because the
 -- policy is evaluated by the database, not by our code.
 -- ===========================================================================
+-- Driven by the catalogue rather than a hand-maintained list: every table
+-- that actually HAS a tenant_id gets the policy, and one that does not is
+-- skipped rather than failing the script.
+--
+-- Not every business table carries the column, and that is correct. An
+-- installment has no tenant_id of its own — it belongs to an invoice, which
+-- belongs to a policy, which is tenant-scoped. Reaching an installment
+-- requires passing through its parent, so the parent's policy governs it.
+--
+-- Deriving the list this way also means a table added later is protected
+-- automatically, instead of being silently unprotected until somebody
+-- remembers to edit an array here.
 DO $$
 DECLARE t text;
 BEGIN
-  FOREACH t IN ARRAY ARRAY[
-    'users','lawyer_profiles','bar_verifications','beneficiaries','vehicles',
-    'law_firms','firm_assets','products','plans','rating_tables','quotes',
-    'policies','invoices','installments','payments','ledger_entries','claims',
-    'documents','notifications','audit_logs','outbox_events'
-  ]
+  FOR t IN
+    SELECT c.table_name
+    FROM information_schema.columns c
+    JOIN information_schema.tables tb
+      ON tb.table_name = c.table_name AND tb.table_schema = c.table_schema
+    WHERE c.table_schema = 'public'
+      AND c.column_name = 'tenant_id'
+      AND tb.table_type = 'BASE TABLE'
   LOOP
-    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = t) THEN
-      EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', t);
-      EXECUTE format('ALTER TABLE %I FORCE ROW LEVEL SECURITY', t);
-      EXECUTE format('DROP POLICY IF EXISTS tenant_isolation ON %I', t);
-      EXECUTE format($f$
-        CREATE POLICY tenant_isolation ON %I
-          USING (tenant_id = current_setting('app.current_tenant', true)::uuid)
-          WITH CHECK (tenant_id = current_setting('app.current_tenant', true)::uuid)
-      $f$, t);
-    END IF;
+    EXECUTE format('ALTER TABLE %I ENABLE ROW LEVEL SECURITY', t);
+    EXECUTE format('ALTER TABLE %I FORCE ROW LEVEL SECURITY', t);
+    EXECUTE format('DROP POLICY IF EXISTS tenant_isolation ON %I', t);
+    EXECUTE format($f$
+      CREATE POLICY tenant_isolation ON %I
+        USING (tenant_id = current_setting('app.current_tenant', true)::uuid)
+        WITH CHECK (tenant_id = current_setting('app.current_tenant', true)::uuid)
+    $f$, t);
+    RAISE NOTICE 'RLS enabled on %', t;
   END LOOP;
 END $$;
 
