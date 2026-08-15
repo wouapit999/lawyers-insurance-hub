@@ -16,7 +16,8 @@
     "prisma:migrate": "prisma migrate deploy",
     "prisma:dev": "prisma migrate dev",
     "prisma:seed": "ts-node prisma/seed.ts",
-    "db:bootstrap": "node scripts/apply-sql.js"
+    "db:verify": "node --env-file-if-exists=.env scripts/verify-database.js",
+    "db:bootstrap": "node --env-file-if-exists=.env scripts/apply-sql.js pre && npx prisma migrate deploy && node --env-file-if-exists=.env scripts/apply-sql.js post && npx ts-node prisma/seed.ts && npm run db:verify"
   },
   "prisma": {
     "seed": "ts-node prisma/seed.ts"
