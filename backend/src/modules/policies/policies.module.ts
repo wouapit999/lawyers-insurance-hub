@@ -58,7 +58,7 @@ export class PoliciesController {
       'when this returns.',
   })
   async subscribe(@CurrentUser() user: AuthenticatedUser, @Body() dto: SubscribeDto) {
-    if (!user.lawyerId) throw new BadRequestException('This account has no lawyer profile');
+    if (!user.lawyerId) throw new BadRequestException('onboarding.no_lawyer_profile');
     return this.policies.subscribe(
       dto.quoteId,
       { ...user, lawyerId: user.lawyerId },
@@ -75,7 +75,7 @@ export class PoliciesController {
       'and marks the current one renewed. The expiring policy is never edited.',
   })
   async renew(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
-    if (!user.lawyerId) throw new BadRequestException('This account has no lawyer profile');
+    if (!user.lawyerId) throw new BadRequestException('onboarding.no_lawyer_profile');
     return this.policies.renew(id, { ...user, lawyerId: user.lawyerId });
   }
 

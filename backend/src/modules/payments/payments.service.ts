@@ -400,7 +400,7 @@ export class PaymentsService {
       throw new BadRequestException('A claim must be approved before it can be paid');
     }
     if (!claim.approvedXaf || claim.approvedXaf <= 0n) {
-      throw new BadRequestException('This claim has no approved amount');
+      throw new BadRequestException('payments.claim_not_approved_amount');
     }
 
     const existing = await this.prisma.payment.findUnique({
@@ -489,7 +489,7 @@ export class PaymentsService {
     });
 
     if (original.status !== 'succeeded') {
-      throw new BadRequestException('Only a settled payment can be refunded');
+      throw new BadRequestException('payments.refund_requires_settled');
     }
 
     const alreadyRefunded = original.refunds

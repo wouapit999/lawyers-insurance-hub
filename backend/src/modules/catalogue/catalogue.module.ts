@@ -175,7 +175,7 @@ export class CatalogueController {
     @Body() dto: CreateQuoteDto,
     @I18n() i18n: I18nContext,
   ) {
-    if (!user.lawyerId) throw new BadRequestException('This account has no lawyer profile');
+    if (!user.lawyerId) throw new BadRequestException('onboarding.no_lawyer_profile');
     return this.catalogue.createQuote(
       user.lawyerId,
       user.tenantId,

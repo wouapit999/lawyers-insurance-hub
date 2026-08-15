@@ -42,13 +42,17 @@
     "refresh_token_invalid": "Session expired. Please sign in again.",
     "refresh_token_reused": "Session revoked for security reasons. Please sign in again.",
     "mfa_required": "Two-factor authentication required",
-    "mfa_invalid": "Incorrect authentication code"
+    "mfa_invalid": "Incorrect authentication code",
+    "authentication_required": "Authentication required"
   },
   "onboarding": {
     "bar_number_taken": "This Bar registration number is already registered",
     "verification_pending": "Your registration is awaiting verification by the Bar Association",
     "verification_rejected": "Your registration was rejected by the Bar Association: {reason}",
-    "not_verified": "You must be verified by the Cameroon Bar Association to subscribe to a policy"
+    "not_verified": "You must be verified by the Cameroon Bar Association to subscribe to a policy",
+    "no_lawyer_profile": "This account is not linked to a lawyer profile",
+    "own_records_only": "You may only access your own records",
+    "verification_already_decided": "This verification has already been decided"
   },
   "policy": {
     "quote_expired": "This quotation has expired. Request a new one.",
@@ -61,7 +65,8 @@
     "policy_not_active": "You can only file a claim against an active policy",
     "incident_before_cover": "The incident date is before the policy took effect",
     "incident_in_future": "The incident date cannot be in the future",
-    "already_closed": "This claim is closed"
+    "already_closed": "This claim is closed",
+    "approved_exceeds_claimed": "The approved amount cannot exceed the amount claimed"
   },
   "payments": {
     "installment_already_paid": "This installment is already settled",
@@ -69,6 +74,8 @@
     "invalid_msisdn": "Invalid phone number for {provider}",
     "amount_mismatch": "The amount received does not match the amount expected",
     "webhook_signature_invalid": "Invalid callback signature",
-    "refund_exceeds_payment": "The refund exceeds the amount paid"
+    "refund_exceeds_payment": "The refund exceeds the amount paid",
+    "claim_not_approved_amount": "This claim has no approved amount",
+    "refund_requires_settled": "Only a settled payment can be refunded"
   }
 }

@@ -269,7 +269,7 @@ export class ClaimsService {
         throw new BadRequestException('A reason is required when rejecting a claim');
       }
       if (approvedXaf && claim.claimedXaf && approvedXaf > claim.claimedXaf) {
-        throw new BadRequestException('The approved amount cannot exceed the amount claimed');
+        throw new BadRequestException('claims.approved_exceeds_claimed');
       }
 
       const { status, slaDueAt } = applyClaimTransition(

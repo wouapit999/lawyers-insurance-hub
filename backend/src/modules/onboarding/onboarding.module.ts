@@ -21,12 +21,12 @@ import {
 function resolveLawyerId(user: AuthenticatedUser, requested?: string): string {
   if (!requested || requested === 'me') {
     if (!user.lawyerId) {
-      throw new ForbiddenException('This account is not linked to a lawyer profile');
+      throw new ForbiddenException('onboarding.no_lawyer_profile');
     }
     return user.lawyerId;
   }
   if (requested !== user.lawyerId && !user.permissions.includes('members:read:all')) {
-    throw new ForbiddenException('You may only access your own records');
+    throw new ForbiddenException('onboarding.own_records_only');
   }
   return requested;
 }

@@ -42,13 +42,17 @@
     "refresh_token_invalid": "Session expirée. Veuillez vous reconnecter.",
     "refresh_token_reused": "Session révoquée pour raison de sécurité. Veuillez vous reconnecter.",
     "mfa_required": "Authentification à deux facteurs requise",
-    "mfa_invalid": "Code d'authentification incorrect"
+    "mfa_invalid": "Code d'authentification incorrect",
+    "authentication_required": "Authentification requise"
   },
   "onboarding": {
     "bar_number_taken": "Ce numéro du Barreau est déjà enregistré",
     "verification_pending": "Votre inscription est en cours de vérification par le Barreau",
     "verification_rejected": "Votre inscription a été rejetée par le Barreau : {reason}",
-    "not_verified": "Vous devez être vérifié par le Barreau du Cameroun pour souscrire une police"
+    "not_verified": "Vous devez être vérifié par le Barreau du Cameroun pour souscrire une police",
+    "no_lawyer_profile": "Ce compte n'est lié à aucun profil d'avocat",
+    "own_records_only": "Vous ne pouvez accéder qu'à vos propres données",
+    "verification_already_decided": "Cette vérification a déjà été traitée"
   },
   "policy": {
     "quote_expired": "Ce devis a expiré. Demandez-en un nouveau.",
@@ -61,7 +65,8 @@
     "policy_not_active": "Vous ne pouvez déclarer un sinistre que sur une police active",
     "incident_before_cover": "La date du sinistre est antérieure à la prise d'effet de la police",
     "incident_in_future": "La date du sinistre ne peut pas être dans le futur",
-    "already_closed": "Ce sinistre est clôturé"
+    "already_closed": "Ce sinistre est clôturé",
+    "approved_exceeds_claimed": "Le montant approuvé ne peut pas dépasser le montant réclamé"
   },
   "payments": {
     "installment_already_paid": "Cette échéance est déjà réglée",
@@ -69,6 +74,8 @@
     "invalid_msisdn": "Numéro de téléphone invalide pour {provider}",
     "amount_mismatch": "Le montant reçu ne correspond pas au montant attendu",
     "webhook_signature_invalid": "Signature de rappel invalide",
-    "refund_exceeds_payment": "Le remboursement dépasse le montant payé"
+    "refund_exceeds_payment": "Le remboursement dépasse le montant payé",
+    "claim_not_approved_amount": "Ce sinistre n'a aucun montant approuvé",
+    "refund_requires_settled": "Seul un paiement réglé peut être remboursé"
   }
 }

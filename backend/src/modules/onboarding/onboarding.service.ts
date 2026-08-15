@@ -129,7 +129,7 @@ export class OnboardingService {
     });
 
     if (verification.status !== 'pending') {
-      throw new BadRequestException('This verification has already been decided');
+      throw new BadRequestException('onboarding.verification_already_decided');
     }
     if (dto.decision === 'rejected' && !dto.reason?.trim()) {
       throw new BadRequestException('A reason is required when rejecting a verification');
