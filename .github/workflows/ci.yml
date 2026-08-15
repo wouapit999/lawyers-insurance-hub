@@ -115,7 +115,7 @@ jobs:
           NODE_ENV: test
 
       - name: Upload coverage
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: always()
         with:
           name: coverage-unit
@@ -257,7 +257,7 @@ jobs:
           cd backend && npx nest build
       - name: Assert the emit landed where the Dockerfile expects it
         run: test -f backend/dist/main.js || { echo '::error::backend/dist/main.js missing'; exit 1; }
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: backend-dist
           path: backend/dist/
