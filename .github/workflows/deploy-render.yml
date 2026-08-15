@@ -1,0 +1,140 @@
+name: Deploy · Render (free tier)
+
+# The free-tier equivalent of deploy-azure.yml. Same pipeline shape — build,
+# scan, migrate, deploy, smoke test — on infrastructure that needs no credit
+# card.
+#
+# Which one runs is decided by the DEPLOY_TARGET repository variable, so both
+# workflows can live side by side and the switch to Azure is a variable
+# change rather than a branch of deleted files.
+
+on:
+  push:
+    branches: [production, staging]
+    paths:
+      - 'backend/**'
+      - 'packages/**'
+      - 'render.yaml'
+      - '.github/workflows/deploy-render.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-render-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  guard:
+    name: Is Render the active target?
+    runs-on: ubuntu-latest
+    outputs:
+      active: ${{ steps.check.outputs.active }}
+    steps:
+      - id: check
+        run: |
+          # Defaults to render, because that is where this project deploys
+          # until an Azure subscription exists. Set the DEPLOY_TARGET
+          # repository variable to 'azure' to hand over.
+          TARGET="${{ vars.DEPLOY_TARGET || 'render' }}"
+          echo "Active deployment target: $TARGET"
+          [ "$TARGET" = "render" ] && echo "active=true" >> "$GITHUB_OUTPUT" \
+                                   || echo "active=false" >> "$GITHUB_OUTPUT"
+
+  image:
+    name: Build and publish image
+    runs-on: ubuntu-latest
+    needs: guard
+    if: needs.guard.outputs.active == 'true'
+    steps:
+      - uses: actions/checkout@v4
+
+      # ghcr.io replaces Azure Container Registry. Free, no card, and the
+      # GITHUB_TOKEN already authenticates to it — no extra secret.
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: backend/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}/lih-api:${{ github.sha }}
+            ghcr.io/${{ github.repository }}/lih-api:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: true
+
+      - name: Scan for vulnerabilities
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ghcr.io/${{ github.repository }}/lih-api:${{ github.sha }}
+          format: table
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+
+  deploy:
+    name: Deploy to Render
+    runs-on: ubuntu-latest
+    needs: [guard, image]
+    if: needs.guard.outputs.active == 'true'
+    environment:
+      name: ${{ github.ref == 'refs/heads/production' && 'production' || 'staging' }}
+      url: https://lih-api.onrender.com
+    steps:
+      - name: Trigger the deploy
+        # Render runs the preDeployCommand from render.yaml first — the three
+        # SQL phases and the seed — and only promotes the new instance if it
+        # succeeds. Same guarantee as the migration Job on AKS: no new code
+        # serves traffic against a schema it cannot use.
+        run: |
+          RESPONSE=$(curl -fsS -X POST \
+            "https://api.render.com/v1/services/${{ secrets.RENDER_SERVICE_ID }}/deploys" \
+            -H "Authorization: Bearer ${{ secrets.RENDER_API_KEY }}" \
+            -H "Content-Type: application/json" \
+            -d '{"clearCache": "do_not_clear"}')
+          echo "$RESPONSE" | head -c 400
+          echo "deploy_id=$(echo "$RESPONSE" | grep -o '"id":"[^"]*' | head -1 | cut -d'"' -f4)" >> "$GITHUB_ENV"
+
+      - name: Wait for the deploy to go live
+        run: |
+          for i in $(seq 1 60); do
+            STATUS=$(curl -fsS \
+              "https://api.render.com/v1/services/${{ secrets.RENDER_SERVICE_ID }}/deploys/${deploy_id}" \
+              -H "Authorization: Bearer ${{ secrets.RENDER_API_KEY }}" \
+              | grep -o '"status":"[^"]*' | head -1 | cut -d'"' -f4)
+            echo "[$i/60] $STATUS"
+            case "$STATUS" in
+              live) echo "Deploy is live."; exit 0 ;;
+              build_failed|update_failed|canceled|pre_deploy_failed)
+                echo "::error::Deploy failed with status: $STATUS"; exit 1 ;;
+            esac
+            sleep 20
+          done
+          echo "::error::Timed out waiting for the deploy"; exit 1
+
+      - name: Smoke test
+        run: |
+          # The free instance may have been asleep; the first request wakes it
+          # and can take up to a minute. Retry rather than fail on a cold start.
+          for i in $(seq 1 10); do
+            if curl -fsS --max-time 90 https://lih-api.onrender.com/health/ready | grep -q '"database":"up"'; then
+              echo "Health check passed."
+              curl -fsS --max-time 30 https://lih-api.onrender.com/v1/products \
+                -H 'Accept-Language: fr' > /dev/null && echo "Catalogue responds in French."
+              exit 0
+            fi
+            echo "[$i/10] not ready yet, waiting…"
+            sleep 15
+          done
+          echo "::error::Service did not become healthy"; exit 1

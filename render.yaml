@@ -1,0 +1,123 @@
+# ---------------------------------------------------------------------------
+# Render Blueprint — free-tier deployment of the LIH API.
+#
+# This is the no-credit-card path. It is deliberately equivalent in SHAPE to
+# the Azure deployment (infrastructure/kubernetes/) so that moving between
+# them is a configuration change:
+#
+#   Azure                          Free tier
+#   ────────────────────────────   ──────────────────────────────
+#   AKS Deployment                 Render web service (this file)
+#   PostgreSQL Flexible Server     Neon
+#   Blob Storage                   Supabase Storage
+#   Key Vault                      Render environment variables
+#   Application Insights           Sentry
+#   Container Registry             ghcr.io
+#
+# Apply with: Render dashboard → New → Blueprint → point at this repo.
+# ---------------------------------------------------------------------------
+
+services:
+  - type: web
+    name: lih-api
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: .
+    plan: free
+    # Frankfurt is the closest Render region to Cameroon.
+    region: frankfurt
+    branch: production
+    healthCheckPath: /health/ready
+
+    # Migrations run before the new instance takes traffic, mirroring the
+    # migration Job in the AKS deployment. Same three phases, same order:
+    # extensions -> schema -> RLS/partitions, then the idempotent seed that
+    # reconciles roles and permissions.
+    preDeployCommand: >-
+      node scripts/apply-sql.js pre &&
+      npx prisma migrate deploy --schema prisma/schema.prisma &&
+      node scripts/apply-sql.js post &&
+      npx ts-node prisma/seed.ts
+
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3000
+      - key: API_PREFIX
+        value: v1
+      - key: DEFAULT_LOCALE
+        value: fr
+
+      # The switches that make this portable. Changing these three, plus the
+      # matching credentials, moves the deployment to Azure.
+      - key: DEPLOY_TARGET
+        value: render
+      - key: STORAGE_DRIVER
+        value: supabase
+      - key: TELEMETRY_DRIVER
+        value: sentry
+
+      # --- secrets: set in the Render dashboard, never in this file --------
+      # sync: false means "prompt me, do not store in git".
+      - key: DATABASE_URL
+        sync: false          # Neon pooled connection string
+      - key: JWT_ACCESS_SECRET
+        generateValue: true  # Render generates and stores it
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+      - key: PII_ENCRYPTION_KEY
+        sync: false          # must be exactly 32 bytes base64 — generate yourself
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_KEY
+        sync: false
+      - key: SUPABASE_STORAGE_BUCKET
+        value: lih-documents
+      - key: SENTRY_DSN
+        sync: false
+
+      - key: PUBLIC_API_URL
+        value: https://lih-api.onrender.com
+      - key: PAYMENT_CALLBACK_BASE_URL
+        value: https://lih-api.onrender.com/v1/payments/webhooks
+      - key: PAYMENT_RETURN_URL
+        sync: false
+
+      # --- payment providers ----------------------------------------------
+      - key: ORANGE_MONEY_BASE_URL
+        value: https://api.orange.com/orange-money-webpay/cm/v1
+      - key: MTN_MOMO_BASE_URL
+        value: https://sandbox.momodeveloper.mtn.com
+      - key: MTN_MOMO_TARGET_ENVIRONMENT
+        value: sandbox
+      - key: ORANGE_MONEY_CLIENT_ID
+        sync: false
+      - key: ORANGE_MONEY_CLIENT_SECRET
+        sync: false
+      - key: ORANGE_MONEY_MERCHANT_KEY
+        sync: false
+      - key: ORANGE_MONEY_WEBHOOK_SECRET
+        sync: false
+      - key: MTN_MOMO_SUBSCRIPTION_KEY
+        sync: false
+      - key: MTN_MOMO_API_USER
+        sync: false
+      - key: MTN_MOMO_API_KEY
+        sync: false
+      - key: MTN_MOMO_WEBHOOK_SECRET
+        sync: false
+
+# ---------------------------------------------------------------------------
+# NOT declared here, on purpose:
+#
+#   * A Render PostgreSQL instance. Neon's free tier is more generous
+#     (0.5 GB that never expires vs Render's 1 GB that expires after 30 days
+#     on the free plan) and it is real Postgres 16 with the extensions this
+#     schema needs — pgcrypto, citext, pg_trgm.
+#
+#   * Redis. The application does not use it yet: sessions and OTP codes live
+#     in Postgres and rate limiting is in-process. Adding a Redis dependency
+#     the code does not consume would be one more free-tier account to manage
+#     for no benefit.
+# ---------------------------------------------------------------------------

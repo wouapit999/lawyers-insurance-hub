@@ -1,0 +1,50 @@
+name: Keep-alive (free tier)
+
+# Render's free tier sleeps a web service after 15 minutes without traffic,
+# and the next request pays a 30-60 second cold start.
+#
+# For a browsing user that is merely slow. For a PAYMENT WEBHOOK it is a
+# correctness problem: MTN and Orange time out well before 60 seconds, so a
+# settlement callback arriving at a sleeping instance can be lost. The
+# reconciliation job would eventually find it, but the member would be left
+# paid and uncovered until then.
+#
+# A ping every 10 minutes counts as traffic and keeps the instance awake. It
+# runs only during Cameroonian waking hours, because 144 pings a day for the
+# whole month would consume a meaningful slice of the 750 free instance-hours
+# and there is nobody paying premiums at 03:00.
+#
+# This is a workaround, not a fix. The real fix is Render's $7/month Starter
+# plan, which never sleeps — and that is the first thing to buy once real
+# money is flowing. See docs/guides/free-tier-deployment.md.
+
+on:
+  schedule:
+    # Every 10 minutes, 05:00–22:00 UTC (06:00–23:00 in Cameroon, UTC+1).
+    - cron: '*/10 5-22 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ping:
+    name: Ping the API
+    runs-on: ubuntu-latest
+    # Skip entirely once the deployment moves to Azure, where nothing sleeps.
+    if: vars.DEPLOY_TARGET != 'azure'
+    steps:
+      - name: Wake the service
+        run: |
+          URL="${{ vars.API_HEALTH_URL || 'https://lih-api.onrender.com/health/live' }}"
+
+          # Generous timeout: if the instance was asleep, this request is the
+          # one paying the cold start, which is exactly the point.
+          if curl -fsS --max-time 90 "$URL" > /dev/null; then
+            echo "Awake: $URL"
+          else
+            # A failure here is not worth failing the workflow — the service
+            # may be mid-deploy. Persistent failures show up in the run
+            # history, which is the signal to look at.
+            echo "::warning::No response from $URL"
+          fi

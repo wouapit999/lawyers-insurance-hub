@@ -60,6 +60,33 @@ export class EnvironmentVariables {
   @IsEnum(['en', 'fr'])
   DEFAULT_LOCALE: 'en' | 'fr' = 'fr';
 
+  // --- deployment target ----------------------------------------------------
+  // The platform the API is running on. Affects defaults and warnings only —
+  // no business logic branches on it. Switching to Azure later means changing
+  // this and the driver values below, not any application code.
+  @IsEnum(['local', 'render', 'azure'])
+  DEPLOY_TARGET: 'local' | 'render' | 'azure' = 'local';
+
+  /**
+   * Where documents live.
+   *   local       — filesystem; development only, EPHEMERAL on any container host
+   *   supabase    — Supabase Storage, the free-tier target
+   *   azure_blob  — Azure Blob Storage, the production target
+   */
+  @IsEnum(['local', 'supabase', 'azure_blob'])
+  STORAGE_DRIVER: 'local' | 'supabase' | 'azure_blob' = 'local';
+
+  @IsOptional() @IsString() SUPABASE_URL?: string;
+  @IsOptional() @IsString() SUPABASE_SERVICE_KEY?: string;
+  @IsOptional() @IsString() SUPABASE_STORAGE_BUCKET?: string;
+
+  /** Public base URL of this API — used to build local signed download links. */
+  @IsOptional() @IsString() PUBLIC_API_URL?: string;
+
+  /** Error tracking. `none` is valid; it simply disables reporting. */
+  @IsEnum(['none', 'sentry', 'appinsights'])
+  TELEMETRY_DRIVER: 'none' | 'sentry' | 'appinsights' = 'none';
+
   // --- payment providers (optional in dev; the adapters fall back to a
   // sandbox simulator when unset, see payments/providers) ------------------
   @IsOptional() @IsString() ORANGE_MONEY_BASE_URL?: string;
@@ -85,6 +112,7 @@ export class EnvironmentVariables {
 
   @IsOptional() @IsString() LOCAL_STORAGE_PATH?: string;
   @IsOptional() @IsString() AZURE_STORAGE_CONNECTION_STRING?: string;
+  @IsOptional() @IsString() AZURE_STORAGE_ACCOUNT?: string;
   @IsOptional() @IsString() AZURE_STORAGE_CONTAINER?: string;
 }
 
@@ -107,6 +135,26 @@ export function validateEnvironment(raw: Record<string, unknown>): EnvironmentVa
       'PII_ENCRYPTION_KEY is required in production — national ID and passport ' +
         'numbers must not be stored in plaintext.',
     );
+  }
+
+  // Fail at boot rather than at the first upload. A driver missing its
+  // credentials is a deploy that should not have started; discovering it when
+  // a lawyer tries to attach a photograph to a claim is far worse.
+  if (config.STORAGE_DRIVER === 'supabase') {
+    if (!config.SUPABASE_URL || !config.SUPABASE_SERVICE_KEY) {
+      throw new Error(
+        'STORAGE_DRIVER=supabase requires SUPABASE_URL and SUPABASE_SERVICE_KEY',
+      );
+    }
+  }
+
+  if (config.STORAGE_DRIVER === 'azure_blob') {
+    if (!config.AZURE_STORAGE_CONNECTION_STRING && !config.AZURE_STORAGE_ACCOUNT) {
+      throw new Error(
+        'STORAGE_DRIVER=azure_blob requires AZURE_STORAGE_CONNECTION_STRING ' +
+          'or AZURE_STORAGE_ACCOUNT (workload identity)',
+      );
+    }
   }
 
   return config;
