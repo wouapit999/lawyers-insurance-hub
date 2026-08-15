@@ -78,9 +78,15 @@ desktop-app/release/
 *.sqlite
 *.sqlite3
 *.db
-storage/
-uploads/
-pgdata/
+# Anchored to the repository root on purpose. An unanchored `storage/` matches
+# EVERY directory of that name at any depth — which silently excluded
+# backend/src/common/storage/, the storage driver source, from the repository.
+# The build then failed in CI with "Cannot find module './storage/storage.module'"
+# while working perfectly on the machine where the files existed untracked.
+/storage/
+/uploads/
+/pgdata/
+backend/storage/
 
 # --- logs -------------------------------------------------------------------
 *.log
