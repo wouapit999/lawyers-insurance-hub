@@ -15,6 +15,11 @@
 
 generator client {
   provider = "prisma-client-js"
+  // Vercel's serverless runtime is Amazon Linux with OpenSSL 3, which is not
+  // the developer machine's target. Without this the deployed function fails
+  // at first query with "Query engine library for current platform could not
+  // be found" — a runtime error that no build step catches.
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
 }
 
 datasource db {
