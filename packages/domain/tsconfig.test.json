@@ -2,7 +2,12 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "types": ["node", "jest"],
-    "noEmit": true
+    "noEmit": true,
+    // The base config pins rootDir to src for the build. This config also
+    // type-checks test/, which sits outside it — and tsc rejects that with
+    // TS6059 even when nothing is emitted. Widening the root to the package
+    // is safe precisely because noEmit is on here.
+    "rootDir": "."
   },
   "include": ["src/**/*.ts", "test/**/*.ts"]
 }
