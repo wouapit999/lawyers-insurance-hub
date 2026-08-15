@@ -16,7 +16,7 @@
  *    at this boundary, so no component ever sees a float franc.
  */
 
-import type { ProblemDetails } from './types';
+import type { LoginResult, ProblemDetails, TokenPair } from './types';
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3000/v1';
 
@@ -145,11 +145,28 @@ export function toXaf(value: string | number | bigint): bigint {
 }
 
 export const api = {
+  register: (
+    payload: {
+      email: string; phone: string; password: string;
+      fullName: string; barNumber: string; admittedOn: string;
+      preferredLang?: 'en' | 'fr';
+    },
+    locale: 'en' | 'fr',
+  ) => apiFetch('/auth/register', { method: 'POST', body: payload, locale }),
+
+  verifyMfa: (mfaToken: string, code: string, locale: 'en' | 'fr') =>
+    apiFetch<TokenPair>('/auth/mfa/verify', {
+      method: 'POST',
+      body: { mfaToken, code },
+      locale,
+    }),
+
   login: (email: string, password: string, locale: 'en' | 'fr') =>
-    apiFetch<{ accessToken: string; refreshToken: string } | { mfaRequired: true; mfaToken: string }>(
-      '/auth/login',
-      { method: 'POST', body: { email, password, platform: 'web' }, locale },
-    ),
+    apiFetch<LoginResult>('/auth/login', {
+      method: 'POST',
+      body: { email, password, platform: 'web' },
+      locale,
+    }),
 
   me: (locale: 'en' | 'fr') => apiFetch('/auth/me', { locale }),
 
