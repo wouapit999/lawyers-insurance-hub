@@ -263,9 +263,14 @@ jobs:
           # anything — and RLS is FORCED on audit_logs, so the session needs
           # the tenant GUC set before it can insert at all.
           TENANT='00000000-0000-0000-0000-000000000001'
-          SEED_ROW="SET app.current_tenant = '$TENANT'; INSERT INTO audit_logs (id, tenant_id, action, entity_type, created_at) VALUES (uuid_generate_v7(), '$TENANT', 'ci.tamper_test', 'CiCheck', now());"
 
-          OUTPUT=$(psql "$PSQL_URL" -v ON_ERROR_STOP=0 -c "$SEED_ROW UPDATE audit_logs SET action = 'tampered' WHERE action = 'ci.tamper_test';" 2>&1 || true)
+          # Each statement gets its OWN psql invocation, and therefore its own
+          # transaction. Combining them would let the UPDATE's exception roll
+          # back the INSERT, leaving no row for the DELETE to hit — the check
+          # would then pass or fail for the wrong reason.
+          psql "$PSQL_URL" -q -c "SET app.current_tenant = '$TENANT'; INSERT INTO audit_logs (id, tenant_id, action, entity_type, created_at) VALUES (uuid_generate_v7(), '$TENANT', 'ci.tamper_test', 'CiCheck', now());"
+
+          OUTPUT=$(psql "$PSQL_URL" -v ON_ERROR_STOP=0 -c "SET app.current_tenant = '$TENANT'; UPDATE audit_logs SET action = 'tampered' WHERE action = 'ci.tamper_test';" 2>&1 || true)
 
           if echo "$OUTPUT" | grep -q 'append-only'; then
             echo 'audit_logs correctly rejected an UPDATE'
