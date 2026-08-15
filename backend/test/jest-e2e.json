@@ -1,0 +1,17 @@
+{
+  "_comment": "End-to-end suite. Runs against the real Postgres and Redis started by the CI job, with the schema migrated and seeded — which is why it lives apart from the unit config and runs with --runInBand. The critical paths to cover here are the ones no unit test can: register -> Bar verification -> quote -> pay -> certificate, the claim lifecycle, and payment idempotency under a replayed webhook.",
+  "moduleFileExtensions": ["js", "json", "ts"],
+  "rootDir": "..",
+  "roots": ["<rootDir>/test"],
+  "testEnvironment": "node",
+  "testRegex": ".e2e-spec.ts$",
+  "transform": {
+    "^.+\\.ts$": ["ts-jest", { "tsconfig": "<rootDir>/tsconfig.json" }]
+  },
+  "moduleNameMapper": {
+    "^@lih/domain$": "<rootDir>/../packages/domain/src",
+    "^@/(.*)$": "<rootDir>/src/$1"
+  },
+  "testTimeout": 30000,
+  "maxWorkers": 1
+}
