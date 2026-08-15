@@ -5,7 +5,14 @@
     // every included file — and prisma/seed.ts imports the domain package by
     // relative path, which lifts the root to the monorepo and emits
     // dist/apps/api/src/main.js instead of dist/main.js.
-    "rootDir": "./src"
+    "rootDir": "./src",
+
+    // Off deliberately. nest-cli.json sets deleteOutDir, so dist is wiped on
+    // every build — but a leftover .tsbuildinfo still claims the output is
+    // current, and tsc then emits nothing at all. The result is a "successful"
+    // build with no dist/main.js, which fails at container start rather than
+    // in CI. The rebuild is a few seconds; the failure mode is an outage.
+    "incremental": false
   },
   "include": ["src/**/*"],
   "exclude": [
