@@ -5,11 +5,11 @@
   "description": "Lawyers Insurance Hub \u2014 insurance platform for members of the Cameroon Bar Association",
   "author": "Roland Wouapit <rwouapit@bouquet-innovation.net> (Bouquet Innovation)",
   "license": "UNLICENSED",
+  "_comment_workspaces": "desktop-app is deliberately NOT a workspace. It depends on electron and electron-builder, which are ~150 MB of binaries that the backend and web CI runs would otherwise download on every job for no benefit. It carries its own lockfile and is built by its own release lane.",
   "workspaces": [
     "packages/*",
     "backend",
-    "frontend-web",
-    "desktop-app"
+    "frontend-web"
   ],
   "scripts": {
     "build": "npm run build --workspace @lih/domain && npm run build --workspace @lih/api",
