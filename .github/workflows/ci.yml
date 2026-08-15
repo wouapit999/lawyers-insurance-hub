@@ -26,6 +26,11 @@ env:
 
 permissions:
   contents: read
+  # paths-filter calls the PR "list files" API to decide which areas changed.
+  # Without this it fails with "Resource not accessible by integration" on
+  # every pull_request run — and on Dependabot PRs in particular, where the
+  # token is restricted by default.
+  pull-requests: read
 
 jobs:
   # ==========================================================================
