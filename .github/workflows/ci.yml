@@ -49,16 +49,23 @@ jobs:
         id: filter
         with:
           filters: |
+            # Each area includes this workflow file, so a change to CI runs
+            # the pipeline it governs. Without that, editing ci.yml skips
+            # every build job and reports a green run that proved nothing —
+            # which is exactly how a broken pipeline gets merged.
             backend:
               - 'backend/**'
               - 'packages/**'
               - 'package.json'
               - 'package-lock.json'
+              - '.github/workflows/ci.yml'
             web:
               - 'frontend-web/**'
               - 'packages/**'
+              - '.github/workflows/ci.yml'
             mobile:
               - 'mobile-app/**'
+              - '.github/workflows/ci.yml'
             desktop:
               - 'desktop-app/**'
             infra:
