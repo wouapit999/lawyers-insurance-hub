@@ -33,10 +33,15 @@ BEGIN
   -- overwritten below.
   uuid_bytes := unix_ts_ms || gen_random_bytes(10);
 
-  -- version 7 -> high nibble of byte 7
-  uuid_bytes := set_byte(uuid_bytes, 6, (b'0111' || get_byte(uuid_bytes, 6)::bit(8) << 4 >> 4)::bit(8)::int);
-  -- variant 10 -> two high bits of byte 9
-  uuid_bytes := set_byte(uuid_bytes, 8, (b'10'   || get_byte(uuid_bytes, 8)::bit(8) << 2 >> 2)::bit(8)::int);
+  -- Plain integer masking rather than bit-string concatenation. The earlier
+  -- `b'0111' || x::bit(8)` form produced a 12-bit value whose cast back to
+  -- bit(8) kept the WRONG eight bits, so every id came out with version 0 —
+  -- a valid UUID that no longer identified itself as v7.
+  --
+  -- byte 6: keep the low nibble, force the high nibble to 7  (0x70)
+  uuid_bytes := set_byte(uuid_bytes, 6, (get_byte(uuid_bytes, 6) & 15) | 112);
+  -- byte 8: keep the low 6 bits, force the top two to 10     (0x80)
+  uuid_bytes := set_byte(uuid_bytes, 8, (get_byte(uuid_bytes, 8) & 63) | 128);
 
   RETURN encode(uuid_bytes, 'hex')::uuid;
 END;

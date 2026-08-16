@@ -1,6 +1,6 @@
 import 'reflect-metadata';
 
-import { Logger, ValidationPipe, VersioningType } from '@nestjs/common';
+import { Logger, ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
@@ -66,7 +66,12 @@ async function bootstrap(): Promise<void> {
     // Health and metrics stay unprefixed for the Kubernetes probes.
     exclude: ['health', 'health/ready', 'health/live'],
   });
-  app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
+  // NOTE: URI versioning is deliberately NOT enabled alongside this prefix.
+  // setGlobalPrefix('v1') already supplies the version segment; adding
+  // enableVersioning({ type: URI }) makes Nest insert a SECOND one, and every
+  // route lands at /v1/v1/... while the startup log still prints /v1/...,
+  // which makes the mismatch invisible until a request 404s.
+  // When a genuine v2 is needed, introduce versioning and drop the prefix.
 
   app.useGlobalPipes(
     new ValidationPipe({

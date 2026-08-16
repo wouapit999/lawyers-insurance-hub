@@ -1,4 +1,4 @@
-import { plainToInstance } from 'class-transformer';
+import { Type, plainToInstance } from 'class-transformer';
 import {
   IsEnum, IsInt, IsOptional, IsString, MinLength, validateSync,
 } from 'class-validator';
@@ -23,6 +23,11 @@ export class EnvironmentVariables {
   @IsEnum(NodeEnv)
   NODE_ENV: NodeEnv = NodeEnv.development;
 
+  // Every hosting platform — Vercel, Render, Kubernetes — supplies PORT as a
+  // STRING in the environment. enableImplicitConversion alone did not coerce
+  // it, so the app refused to boot with 'PORT must be an integer number'.
+  // An explicit @Type is the reliable form.
+  @Type(() => Number)
   @IsInt()
   PORT = 3000;
 

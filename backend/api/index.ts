@@ -22,7 +22,7 @@
  */
 import 'reflect-metadata';
 
-import { ValidationPipe, VersioningType } from '@nestjs/common';
+import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import type { Express } from 'express';
 import express from 'express';
@@ -76,7 +76,12 @@ async function bootstrap(): Promise<Express> {
   app.setGlobalPrefix(process.env.API_PREFIX ?? 'v1', {
     exclude: ['health', 'health/ready', 'health/live'],
   });
-  app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
+  // NOTE: URI versioning is deliberately NOT enabled alongside this prefix.
+  // setGlobalPrefix('v1') already supplies the version segment; adding
+  // enableVersioning({ type: URI }) makes Nest insert a SECOND one, and every
+  // route lands at /v1/v1/... while the startup log still prints /v1/...,
+  // which makes the mismatch invisible until a request 404s.
+  // When a genuine v2 is needed, introduce versioning and drop the prefix.
 
   app.useGlobalPipes(
     new ValidationPipe({
