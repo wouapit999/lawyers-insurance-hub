@@ -2,7 +2,7 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "nextjs",
   "buildCommand": "cd .. && npm run build --workspace @lih/domain && cd frontend-web && next build",
-  "installCommand": "cd .. && npm ci",
+  "installCommand": "cd .. && npm ci --include=dev",
   "outputDirectory": ".next",
   "regions": [
     "fra1"
@@ -113,5 +113,6 @@
     }
   },
   "cleanUrls": true,
-  "trailingSlash": false
+  "trailingSlash": false,
+  "_comment_install": "Vercel sets NODE_ENV=production during install, which makes npm ci skip devDependencies. TypeScript and every @types/* package live there, so --include=dev is required or the build fails with TS7016 on express."
 }

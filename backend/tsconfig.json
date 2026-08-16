@@ -29,6 +29,10 @@
       "@/*": ["src/*"]
     }
   },
-  "include": ["src/**/*", "prisma/**/*", "test/**/*"],
+  // api/** holds the Vercel serverless entry point. It was missing here,
+  // so `tsc --noEmit` type-checked everything EXCEPT the file that Vercel
+  // actually builds — the definition of a local green light that means
+  // nothing.
+  "include": ["src/**/*", "api/**/*", "prisma/**/*", "test/**/*"],
   "exclude": ["node_modules", "dist"]
 }
