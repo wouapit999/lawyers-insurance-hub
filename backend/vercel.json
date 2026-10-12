@@ -1,11 +1,12 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "installCommand": "cd .. && npm ci --include=dev",
-  "buildCommand": "cd .. && npm run build --workspace @lih/domain && cd backend && npx prisma generate",
+  "buildCommand": "cd .. && npm run build --workspace @lih/domain && cd backend && npx prisma generate && mkdir -p node_modules/.prisma && cp -r ../node_modules/.prisma/client node_modules/.prisma/",
   "functions": {
     "api/index.ts": {
       "memory": 1024,
-      "maxDuration": 30
+      "maxDuration": 30,
+      "includeFiles": "node_modules/.prisma/client/**"
     }
   },
   "rewrites": [
