@@ -101,7 +101,52 @@ async function bootstrap(): Promise<Express> {
   return expressApp;
 }
 
+/**
+ * Remembers a boot failure so every subsequent request reports the same
+ * cause, instead of each one retrying and timing out.
+ */
+let bootError: Error | null = null;
+
 export default async function handler(req: express.Request, res: express.Response) {
-  const app = await bootstrap();
-  return app(req, res);
+  // Without this, ANY failure during bootstrap — a missing environment
+  // variable, a Prisma engine that was not bundled, a bad import — surfaces
+  // as an opaque FUNCTION_INVOCATION_FAILED with no detail in the response
+  // and nothing useful to act on. Turning it into a readable 503 is the
+  // difference between debugging and guessing.
+  try {
+    if (bootError) throw bootError;
+    const app = await bootstrap();
+    return app(req, res);
+  } catch (error) {
+    bootError = error instanceof Error ? error : new Error(String(error));
+
+    // eslint-disable-next-line no-console
+    console.error('[bootstrap] API failed to start:', bootError);
+
+    // Which configuration keys are present — names only, never values. This
+    // is what distinguishes "variable missing on this project" from "engine
+    // missing from the bundle", and it is the first thing worth knowing.
+    const present = [
+      'DATABASE_URL', 'JWT_ACCESS_SECRET', 'JWT_REFRESH_SECRET',
+      'PII_ENCRYPTION_KEY', 'NODE_ENV', 'API_PREFIX', 'STORAGE_DRIVER',
+    ].filter((key) => Boolean(process.env[key]));
+
+    res.status(503).setHeader('Content-Type', 'application/problem+json');
+    return res.end(
+      JSON.stringify(
+        {
+          type: 'https://api.lih.cm/problems/bootstrap-failed',
+          title: 'The API failed to start',
+          status: 503,
+          detail: bootError.message,
+          // Truncated: enough to locate the failure, not enough to paste a
+          // full internal stack into a public response.
+          stack: bootError.stack?.split(/\r?\n/).slice(0, 6).join(' | '),
+          configPresent: present,
+        },
+        null,
+        2,
+      ),
+    );
+  }
 }
