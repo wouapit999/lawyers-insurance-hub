@@ -114,6 +114,19 @@ CNAME  admin    cname.vercel-dns.com.
 Certificates are issued automatically. Allow up to an hour for propagation
 from a Cameroonian registrar.
 
+### Why `--include=dev` in both `vercel.json` files
+
+Vercel exports `NODE_ENV=production` for the install step, which makes
+`npm ci` skip `devDependencies`. In this repo every build tool lives there —
+TypeScript, all `@types/*`, Prisma, the Nest CLI — so without the flag the
+build fails with `TS7016: Could not find a declaration file for module
+'express'`. The package count in the log is the tell: 298 installed instead
+of 780.
+
+Note also that `vercel.json` sets `additionalProperties: false` in its schema.
+There is no way to put a comment in it — a `_comment` key fails validation
+before the build even starts. Explanations belong here instead.
+
 ## 7. Cloudflare in front (recommended)
 
 Cloudflare adds DDoS protection, a WAF, and — the reason that matters most

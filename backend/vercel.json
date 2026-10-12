@@ -36,6 +36,5 @@
         }
       ]
     }
-  ],
-  "_comment_install": "Vercel sets NODE_ENV=production during install, which makes npm ci skip devDependencies. TypeScript and every @types/* package live there, so --include=dev is required or the build fails with TS7016 on express."
+  ]
 }
