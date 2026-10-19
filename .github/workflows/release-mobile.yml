@@ -113,7 +113,7 @@ jobs:
           # a French-only Play listing would read as an oversight to half the Bar.
           whatsNewDirectory: mobile-app/distribution/whatsnew
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: android-release-${{ steps.version.outputs.name }}
           path: |
@@ -213,7 +213,7 @@ jobs:
           echo "after which the build appears in TestFlight for the"
           echo "'Cameroon Bar Association Pilot' tester group."
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ios-release-${{ steps.version.outputs.name }}
           path: mobile-app/build/ios/ipa/*.ipa
